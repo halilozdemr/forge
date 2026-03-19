@@ -29,14 +29,8 @@ export class BudgetGate {
       : null;
 
     if (!policy) {
-      policy = await this.db.budgetPolicy.findUnique({
-        where: {
-          companyId_scope_scopeId: {
-            companyId,
-            scope: "company",
-            scopeId: null,
-          },
-        },
+      policy = await this.db.budgetPolicy.findFirst({
+        where: { companyId, scope: "company", scopeId: null },
       });
     }
 

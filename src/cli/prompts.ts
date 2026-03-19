@@ -41,7 +41,8 @@ export async function select<T extends string>(opts: {
   message: string;
   options: Array<{ value: T; label: string; hint?: string }>;
 }): Promise<T> {
-  const result = await p.select(opts);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const result = await p.select(opts as any);
   if (p.isCancel(result)) {
     p.cancel("Cancelled.");
     process.exit(0);

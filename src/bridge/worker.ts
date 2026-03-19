@@ -1,5 +1,4 @@
-import { Worker } from "bullmq";
-import type { ConnectionOptions } from "bullmq";
+import { Worker, type ConnectionOptions } from "bullmq";
 import { getDb } from "../db/client.js";
 import { createRunner } from "./runners/factory.js";
 import { BudgetGate } from "./budget-gate.js";
@@ -114,7 +113,7 @@ export function createAgentWorker(
         where: { bullmqJobId: job.id! },
         data: {
           status: result.success ? "completed" : "failed",
-          result: result.success ? { output: result.output?.slice(0, 10000) } : null,
+          result: result.success ? { output: result.output?.slice(0, 10000) } : undefined,
           error: result.error || null,
           completedAt: new Date(),
         },

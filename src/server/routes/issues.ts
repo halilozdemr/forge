@@ -104,9 +104,22 @@ export async function issueRoutes(server: FastifyInstance) {
     const existing = await db.issue.findUnique({ where: { id: request.params.id } });
     if (!existing) return reply.code(404).send({ error: "Issue not found" });
 
+    const { status, assignedAgentId, result, sprintId, metadata } = request.body;
     const issue = await db.issue.update({
       where: { id: request.params.id },
-      data: request.body,
+      data: {
+        ...(status !== undefined && { status }),
+        ...(result !== undefined && { result }),
+        ...(metadata !== undefined && { metadata: metadata as any }),
+        ...(assignedAgentId !== undefined && {
+          assignedAgent: assignedAgentId
+            ? { connect: { id: assignedAgentId } }
+            : { disconnect: true },
+        }),
+        ...(sprintId !== undefined && {
+          sprint: sprintId ? { connect: { id: sprintId } } : { disconnect: true },
+        }),
+      },
     });
 
     return { issue };

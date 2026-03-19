@@ -30,17 +30,19 @@ export async function budgetRoutes(fastify: FastifyInstance): Promise<void> {
     }
 
     const db = getDb();
-    const policy = await db.budgetPolicy.upsert({
-      where: {
-        companyId_scope_scopeId: {
-          companyId,
-          scope,
-          scopeId: scopeId ?? null,
-        },
-      },
-      update: { monthlyLimitUsd, softLimitPct, hardLimitPct, action },
-      create: { companyId, scope, scopeId: scopeId ?? null, monthlyLimitUsd, softLimitPct, hardLimitPct, action },
+    // Use findFirst + upsert pattern to handle nullable scopeId in compound unique key
+    const existing = await db.budgetPolicy.findFirst({
+      where: { companyId, scope, scopeId: scopeId ?? null },
     });
+
+    const policy = existing
+      ? await db.budgetPolicy.update({
+          where: { id: existing.id },
+          data: { monthlyLimitUsd, softLimitPct, hardLimitPct, action },
+        })
+      : await db.budgetPolicy.create({
+          data: { companyId, scope, scopeId: scopeId ?? null, monthlyLimitUsd, softLimitPct, hardLimitPct, action },
+        });
     return reply.status(201).send({ policy });
   });
 

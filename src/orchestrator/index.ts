@@ -1,7 +1,6 @@
 import { createChildLogger } from "../utils/logger.js";
 import { getDb } from "../db/client.js";
 import { getQueue } from "../bridge/queue.js";
-import { AgentRegistry } from "../agents/registry.js";
 import { buildFeaturePipeline } from "./pipelines/feature.js";
 import { buildBugfixPipeline } from "./pipelines/bugfix.js";
 import { buildRefactorPipeline } from "./pipelines/refactor.js";
@@ -27,12 +26,6 @@ export interface DispatchResult {
  * so the BullMQ worker chains them automatically.
  */
 export class FirmOrchestrator {
-  private registry: AgentRegistry;
-
-  constructor() {
-    this.registry = new AgentRegistry();
-  }
-
   async dispatch(opts: {
     companyId: string;
     projectId: string;
@@ -55,10 +48,11 @@ export class FirmOrchestrator {
 
     const db = getDb();
     const q = getQueue({} as any); // queue must be initialized via start command
+    const { AgentRegistry } = await import("../agents/registry.js");
+    const registry = new AgentRegistry(db);
     const jobIds: string[] = [];
 
     // Enqueue steps as a linked chain: each step carries nextAction for the next step.
-    // We do this by walking from last to first and building the chain backwards.
     for (let i = 0; i < steps.length; i++) {
       const step = steps[i];
       const nextStep = steps[i + 1];
@@ -70,7 +64,7 @@ export class FirmOrchestrator {
         continue;
       }
 
-      const systemPrompt = await this.registry.getPrompt(step.agentSlug, companyId);
+      const systemPrompt = await registry.resolvePrompt(agent);
 
       // Only enqueue the first step directly — subsequent steps are chained via nextAction
       if (i === 0) {

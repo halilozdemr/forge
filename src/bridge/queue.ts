@@ -71,8 +71,8 @@ export async function enqueueAgentJob(opts: {
   });
   if (!agent) throw new Error(`Agent ${opts.agentId} not found`);
 
-  const registry = new AgentRegistry();
-  const systemPrompt = await registry.getPrompt(agent.slug, opts.companyId);
+  const registry = new AgentRegistry(db);
+  const systemPrompt = await registry.resolvePrompt(agent);
 
   const job = await queue.add("agent-task", {
     companyId: opts.companyId,
