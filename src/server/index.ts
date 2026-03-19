@@ -1,5 +1,9 @@
 import Fastify from "fastify";
+import { existsSync } from "fs";
 import cors from "@fastify/cors";
+import fastifyStatic from "@fastify/static";
+import path from "path";
+import { fileURLToPath } from "url";
 import { createChildLogger } from "../utils/logger.js";
 import { healthRoutes } from "./routes/health.js";
 import { completionsRoutes } from "./routes/completions.js";
@@ -30,6 +34,33 @@ export async function createServer(port = 3131, host = "0.0.0.0") {
   await server.register(queueRoutes, { prefix: "/v1" });
   await server.register(budgetRoutes, { prefix: "/v1" });
   await server.register(companyRoutes, { prefix: "/v1" });
+
+  const __filename = fileURLToPath(import.meta.url);
+  const __dirname = path.dirname(__filename);
+  
+  let webuiDistPath = path.join(__dirname, "../../webui/dist");
+  if (!existsSync(webuiDistPath)) {
+    // Try one more level up for production (dist/src/server -> webui/dist)
+    webuiDistPath = path.join(__dirname, "../../../webui/dist");
+  }
+
+  log.info(`Serving WebUI from: ${webuiDistPath}`);
+
+  await server.register(fastifyStatic, {
+    root: webuiDistPath,
+    prefix: "/",
+    wildcard: false, // Don't match everything here, we need the fallback below
+  });
+
+  // SPA fallback for hash-based router (optional but good practice)
+  // Even though it's hash-based, we want to serve index.html for unknown routes
+  server.setNotFoundHandler((request, reply) => {
+    if (request.url.startsWith("/v1") || request.url === "/health") {
+      reply.code(404).send({ error: "Not Found" });
+      return;
+    }
+    reply.sendFile("index.html");
+  });
 
   const address = await server.listen({ port, host });
   log.info(`Server listening on ${address}`);

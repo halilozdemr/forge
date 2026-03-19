@@ -1,0 +1,35 @@
+:root {
+  /* Surfaces */
+  --bg:        #0a0a0f;
+  --surface:   #111118;
+  --surface2:  #16161f;
+  --border:    #1e1e2e;
+  --border2:   #2e2e44;
+
+  /* Text */
+  --text:      #e2e8f0;
+  --text2:     #64748b;
+  --text3:     #94a3b8;
+
+  /* Brand / Model Colors */
+  --kimi:      #3b82f6;
+  --deepseek:  #06b6d4;
+  --sonnet:    #8b5cf6;
+  --primary:   #6366f1;
+
+  /* Status Colors */
+  --green:     #10b981;
+  --red:       #ef4444;
+  --amber:     #f59e0b;
+  --indigo:    #6366f1;
+
+  /* Sizes */
+  --r:         10px;
+  --r-sm:      6px;
+  --sidebar-w: 220px;
+  --topbar-h:  56px;
+  --container-max-w: 1200px;
+
+  /* Transitions */
+  --t:         0.2s ease;
+}

@@ -1,0 +1,5 @@
+export const CONFIG = {
+  COMPANY_ID: 'company_1',
+  POLLING_INTERVAL_MS: 10000,
+  QUEUE_POLLING_INTERVAL_MS: 3000,
+};
