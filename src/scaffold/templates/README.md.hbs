@@ -1,0 +1,77 @@
+# {{projectName}}
+
+{{description}}
+
+## Stack
+{{stack}}
+
+## Current Status
+{{#if currentStatus}}
+{{currentStatus}}
+{{else}}
+Active development.
+{{/if}}
+
+## Goals
+{{#if goals}}
+{{goals}}
+{{else}}
+See `.forge/context/project.md` for full project context.
+{{/if}}
+
+---
+
+## Managed by Forge
+
+This project is managed by **Forge** — an AI agent orchestration platform.
+
+The engineering team:
+
+| Agent | Role |
+|-------|------|
+| CEO | Client liaison, intake, routing |
+| Project Manager | Sprint planning, task decomposition |
+| Architect | Technical design, SOLID enforcement |
+| Engineer | Code implementation |
+| Reviewer | Code review, quality gate |
+| Debugger | Bug investigation, hotfix |
+| DevOps | Git workflow, deployment |
+| Designer | UI/UX specifications |
+| Scrum-Master | Retrospectives, process improvement |
+
+### Quick Start
+
+```bash
+# Launch the agent team
+npx forge start
+
+# Create a new task
+npx forge issue create --type feature --title "Your feature here"
+
+# Check system status
+npx forge status
+
+# Check budget usage
+npx forge budget show
+```
+
+### Project Structure
+
+```
+.forge/
+├── context/        # Project context — agents read this
+│   ├── project.md
+│   ├── conventions.md
+│   └── standards.md
+├── memory/         # Persistent agent memory
+│   ├── decisions.md
+│   ├── patterns.md
+│   ├── problems.md
+│   └── retrospectives/
+└── sprints/        # Sprint tracking
+    ├── active_sprint.json
+    └── backlog.json
+```
+
+---
+_Scaffolded by Forge v3 — {{date}}_

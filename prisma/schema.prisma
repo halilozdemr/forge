@@ -1,0 +1,302 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// 1. Companies
+model Company {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  agents         Agent[]
+  projects       Project[]
+  budgetPolicies BudgetPolicy[]
+  costEvents     CostEvent[]
+  activityLogs   ActivityLog[]
+  skills         Skill[]
+  memoryEntries  MemoryEntry[]
+  configEntries  ConfigEntry[]
+  queueJobs      QueueJob[]
+  heartbeatRuns  HeartbeatRun[]
+
+  @@map("companies")
+}
+
+// 2. Projects
+model Project {
+  id         String  @id @default(cuid())
+  companyId  String
+  name       String
+  path       String
+  stack      String  @default("other")
+  config     Json    @default("{}")
+  readmePath String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  company Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  sprints Sprint[]
+  issues  Issue[]
+
+  @@unique([companyId, name])
+  @@map("projects")
+}
+
+// 3. Agents
+model Agent {
+  id            String  @id @default(cuid())
+  companyId     String
+  slug          String
+  name          String
+  role          String
+  modelProvider String  @default("claude-cli")
+  model         String
+  promptFile    String?
+  reportsTo     String?
+  status        String  @default("idle")
+  permissions   Json    @default("{}")
+  maxConcurrent Int     @default(1)
+  heartbeatCron String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  company     Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  apiKeys     AgentApiKey[]
+  costEvents  CostEvent[]
+  assignedIssues Issue[]   @relation("AssignedAgent")
+
+  @@unique([companyId, slug])
+  @@map("agents")
+}
+
+// 4. Agent API Keys
+model AgentApiKey {
+  id        String    @id @default(cuid())
+  agentId   String
+  keyHash   String    @unique
+  prefix    String
+  lastUsed  DateTime?
+  expiresAt DateTime?
+  createdAt DateTime  @default(now())
+
+  agent Agent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@map("agent_api_keys")
+}
+
+// 5. Issues
+model Issue {
+  id              String  @id @default(cuid())
+  projectId       String
+  sprintId        String?
+  title           String
+  description     String?
+  type            String  @default("feature")
+  status          String  @default("open")
+  priority        String  @default("normal")
+  assignedAgentId String?
+  parentIssueId   String?
+  result          String?
+  metadata        Json    @default("{}")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  sprint        Sprint?  @relation(fields: [sprintId], references: [id])
+  assignedAgent Agent?   @relation("AssignedAgent", fields: [assignedAgentId], references: [id])
+  parentIssue   Issue?   @relation("SubIssues", fields: [parentIssueId], references: [id])
+  subIssues     Issue[]  @relation("SubIssues")
+
+  skillExecutions SkillExecution[]
+  queueJobs       QueueJob[]
+
+  @@map("issues")
+}
+
+// 6. Sprints
+model Sprint {
+  id        String    @id @default(cuid())
+  projectId String
+  number    Int
+  goal      String
+  status    String    @default("planning")
+  startedAt DateTime?
+  closedAt  DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  issues  Issue[]
+
+  @@unique([projectId, number])
+  @@map("sprints")
+}
+
+// 7. Cost Events
+model CostEvent {
+  id           String   @id @default(cuid())
+  companyId    String
+  agentId      String
+  issueId      String?
+  model        String
+  provider     String
+  inputTokens  Int      @default(0)
+  outputTokens Int      @default(0)
+  costUsd      Decimal  @default(0) @db.Decimal(10, 6)
+  durationMs   Int      @default(0)
+  createdAt    DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  agent   Agent   @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, createdAt])
+  @@index([agentId, createdAt])
+  @@map("cost_events")
+}
+
+// 8. Budget Policies
+model BudgetPolicy {
+  id              String  @id @default(cuid())
+  companyId       String
+  scope           String  @default("company")
+  scopeId         String?
+  monthlyLimitUsd Decimal @db.Decimal(10, 2)
+  softLimitPct    Int     @default(80)
+  hardLimitPct    Int     @default(100)
+  action          String  @default("warn")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, scope, scopeId])
+  @@map("budget_policies")
+}
+
+// 9. Skills
+model Skill {
+  id          String  @id @default(cuid())
+  companyId   String
+  name        String
+  description String
+  content     String
+  version     Int     @default(1)
+  active      Boolean @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  company    Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  executions SkillExecution[]
+
+  @@unique([companyId, name])
+  @@map("skills")
+}
+
+// 10. Skill Executions
+model SkillExecution {
+  id           String  @id @default(cuid())
+  skillId      String
+  issueId      String
+  result       String  @default("failed")
+  errorMessage String?
+  durationMs   Int     @default(0)
+  createdAt    DateTime @default(now())
+
+  skill Skill @relation(fields: [skillId], references: [id], onDelete: Cascade)
+  issue Issue @relation(fields: [issueId], references: [id], onDelete: Cascade)
+
+  @@map("skill_executions")
+}
+
+// 11. Memory Entries
+model MemoryEntry {
+  id        String   @id @default(cuid())
+  companyId String
+  type      String   @default("learning")
+  content   String
+  source    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, type])
+  @@map("memory_entries")
+}
+
+// 12. Activity Log
+model ActivityLog {
+  id        String   @id @default(cuid())
+  companyId String
+  actor     String
+  action    String
+  resource  String?
+  metadata  Json     @default("{}")
+  createdAt DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, createdAt])
+  @@map("activity_logs")
+}
+
+// 13. Queue Jobs (BullMQ mirror)
+model QueueJob {
+  id          String    @id @default(cuid())
+  bullmqJobId String    @unique
+  companyId   String
+  agentSlug   String
+  issueId     String?
+  status      String    @default("queued")
+  attempts    Int       @default(0)
+  maxAttempts Int       @default(3)
+  result      Json?
+  error       String?
+  queuedAt    DateTime  @default(now())
+  startedAt   DateTime?
+  completedAt DateTime?
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  issue   Issue?  @relation(fields: [issueId], references: [id])
+
+  @@index([companyId, status])
+  @@map("queue_jobs")
+}
+
+// 14. Heartbeat Runs
+model HeartbeatRun {
+  id          String    @id @default(cuid())
+  agentSlug   String
+  companyId   String
+  status      String    @default("triggered")
+  result      String?
+  triggeredAt DateTime  @default(now())
+  completedAt DateTime?
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, agentSlug])
+  @@map("heartbeat_runs")
+}
+
+// 15. Config Store
+model ConfigEntry {
+  id        String  @id @default(cuid())
+  companyId String?
+  key       String
+  value     Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, key])
+  @@map("config_entries")
+}
