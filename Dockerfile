@@ -1,6 +1,8 @@
 # ── Stage 1: Build ──────────────────────────────────────────────
 FROM node:22-alpine AS builder
 
+RUN apk add --no-cache openssl
+
 WORKDIR /app
 
 COPY package*.json ./
@@ -17,11 +19,14 @@ RUN npm run build
 # ── Stage 2: Runtime ────────────────────────────────────────────
 FROM node:22-alpine AS runner
 
+# OpenSSL required by Prisma on Alpine
+RUN apk add --no-cache openssl
+
 WORKDIR /app
 
-# Only production deps
+# Only production deps + prisma CLI for migrations
 COPY package*.json ./
-RUN npm ci --omit=dev
+RUN npm ci --omit=dev && npm install prisma
 
 # Copy compiled output + prisma
 COPY --from=builder /app/dist ./dist

@@ -5,25 +5,17 @@ import { createChildLogger } from "../utils/logger.js";
 const log = createChildLogger("migrate");
 
 export async function runMigrations(): Promise<void> {
-  const schemaPath = resolve(join(import.meta.dirname, "..", "..", "prisma", "schema.prisma"));
-  log.info("Running database migrations...");
+  // dist/src/db → dist/src → dist → project root → prisma/
+  const schemaPath = resolve(join(import.meta.dirname, "..", "..", "..", "prisma", "schema.prisma"));
+  log.info({ schemaPath }, "Running database migrations...");
   try {
-    execSync(`npx prisma migrate deploy --schema="${schemaPath}"`, {
+    execSync(`npx prisma db push --schema="${schemaPath}" --accept-data-loss`, {
       stdio: "pipe",
       env: process.env,
     });
-    log.info("Migrations complete");
+    log.info("DB push complete — schema synced");
   } catch (err) {
-    log.warn("Migration deploy failed, trying db push...");
-    try {
-      execSync(`npx prisma db push --schema="${schemaPath}" --accept-data-loss`, {
-        stdio: "pipe",
-        env: process.env,
-      });
-      log.info("DB push complete");
-    } catch (pushErr) {
-      log.error({ err: pushErr }, "Database setup failed");
-      throw pushErr;
-    }
+    log.error({ err }, "Database setup failed");
+    throw err;
   }
 }
