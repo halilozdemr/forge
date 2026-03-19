@@ -1,0 +1,68 @@
+services:
+
+  # ── PostgreSQL ────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: forge-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: forge
+      POSTGRES_USER: forge
+      POSTGRES_PASSWORD: forge
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U forge -d forge"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ── Redis ─────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: forge-redis
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ── Forge App ─────────────────────────────────────────────────
+  forge:
+    build: .
+    container_name: forge-app
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://forge:forge@postgres:5432/forge
+      REDIS_URL: redis://redis:6379
+      FIRM_PORT: 3131
+      NODE_ENV: production
+      # Claude CLI path inside container (mounted from host)
+      CLAUDE_PATH: /usr/local/bin/claude
+    ports:
+      - "3131:3131"
+    volumes:
+      # Mount Claude CLI binary from host
+      - ${CLAUDE_CLI_PATH:-~/.local/bin/claude}:/usr/local/bin/claude:ro
+      # Mount Claude auth tokens / config from host
+      - ${HOME}/.claude:/root/.claude:ro
+      # Mount current project dir so agents can read/write files
+      - ${PROJECT_PATH:-.}:/workspace
+    working_dir: /workspace
+    command: ["node", "/app/dist/bin/forge.js", "start", "--pg-url", "postgresql://forge:forge@postgres:5432/forge", "--redis-url", "redis://redis:6379"]
+
+volumes:
+  postgres_data:
+  redis_data:
