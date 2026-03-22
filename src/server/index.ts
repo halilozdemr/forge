@@ -18,6 +18,7 @@ import { initRoutes } from "./routes/init.js";
 import { statusRoutes } from "./routes/status.js";
 import { secretRoutes } from "./routes/secrets.js";
 import { approvalRoutes } from "./routes/approvals.js";
+import { labelRoutes } from "./routes/labels.js";
 
 const log = createChildLogger("server");
 
@@ -42,6 +43,7 @@ export async function createServer(port = 3131, host = "0.0.0.0") {
   await server.register(statusRoutes, { prefix: "/v1" });
   await server.register(secretRoutes, { prefix: "/v1" });
   await server.register(approvalRoutes, { prefix: "/v1" });
+  await server.register(labelRoutes, { prefix: "/v1" });
 
   const __filename = fileURLToPath(import.meta.url);
   const __dirname = path.dirname(__filename);

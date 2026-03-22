@@ -31,6 +31,7 @@ model Company {
   goals          Goal[]
   secrets        CompanySecret[]
   approvals      Approval[]
+  labels         Label[]
 
   @@map("companies")
 }
@@ -136,6 +137,7 @@ model Issue {
   executionWorkspace ExecutionWorkspace?
   comments           IssueComment[]
   workProducts       IssueWorkProduct[]
+  issueLabels        IssueLabel[]
 
   @@map("issues")
 }
@@ -489,4 +491,28 @@ model IssueWorkProduct {
 
   issue Issue @relation(fields: [issueId], references: [id], onDelete: Cascade)
   @@map("issue_work_products")
+}
+
+model Label {
+  id        String @id @default(cuid())
+  companyId String
+  name      String
+  color     String @default("#6b7280")
+
+  company     Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  issueLabels IssueLabel[]
+
+  @@unique([companyId, name])
+  @@map("labels")
+}
+
+model IssueLabel {
+  issueId String
+  labelId String
+
+  issue Issue @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  label Label @relation(fields: [labelId], references: [id], onDelete: Cascade)
+
+  @@id([issueId, labelId])
+  @@map("issue_labels")
 }

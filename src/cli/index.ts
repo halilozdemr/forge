@@ -16,6 +16,7 @@ import { queueCommand } from "./commands/queue.js";
 import { goalCommand } from "./commands/goal.js";
 import { secretCommand } from "./commands/secret.js";
 import { approvalCommand } from "./commands/approval.js";
+import { labelCommand } from "./commands/label.js";
 
 const program = new Command("forge");
 
@@ -40,5 +41,6 @@ program.addCommand(queueCommand());
 program.addCommand(goalCommand());
 program.addCommand(secretCommand());
 program.addCommand(approvalCommand());
+program.addCommand(labelCommand());
 
 program.parse(process.argv);

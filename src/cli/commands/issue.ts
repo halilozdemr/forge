@@ -90,6 +90,12 @@ export function issueCommand(): Command {
       console.log(`Priority: ${issue.priority}`);
       if (issue.assignedAgent) console.log(`Agent:    ${issue.assignedAgent.slug}`);
       if (issue.sprint) console.log(`Sprint:   #${issue.sprint.number} — ${issue.sprint.goal}`);
+      
+      const { labels } = await api<{ labels: any[] }>(`/v1/issues/${id}/labels`);
+      if (labels.length) {
+        console.log(`Labels:   ${labels.map((l) => l.name).join(", ")}`);
+      }
+
       if (issue.result) console.log(`\nResult:\n${issue.result.slice(0, 500)}`);
       console.log();
     });
@@ -143,6 +149,19 @@ export function issueCommand(): Command {
         console.log(`${p.content.slice(0, 1000)}${p.content.length > 1000 ? "..." : ""}\n`);
         console.log("─".repeat(30));
       }
+    });
+
+  cmd
+    .command("label <id> [labels...]")
+    .description("Sync labels for an issue")
+    .option("--company <id>", "Company ID")
+    .action(async (id, labelNames, opts) => {
+      const companyId = await resolveCompany(opts.company);
+      await api(`/v1/issues/${id}/labels`, "POST", {
+        companyId,
+        labelNames: labelNames || [],
+      });
+      console.log(`Labels synced for issue ${id}: ${labelNames?.join(", ") || "none"}`);
     });
 
   return cmd;
