@@ -109,5 +109,41 @@ export function issueCommand(): Command {
       console.log(`Check status with: \x1b[1mnpx forge queue status --job ${jobId}\x1b[0m`);
     });
 
+  cmd
+    .command("comments <id>")
+    .description("Show issue comments")
+    .action(async (id) => {
+      const { comments } = await api<{ comments: any[] }>(`/v1/issues/${id}/comments`);
+      if (!comments.length) {
+        console.log("No comments found.");
+        return;
+      }
+      console.log("\nComments\n" + "─".repeat(60));
+      for (const c of comments) {
+        const date = new Date(c.createdAt).toLocaleString();
+        console.log(`\x1b[1m${c.authorSlug}\x1b[0m [${date}]:`);
+        console.log(`${c.content}\n`);
+      }
+    });
+
+  cmd
+    .command("products <id>")
+    .description("Show issue work products")
+    .action(async (id) => {
+      const { workProducts } = await api<{ workProducts: any[] }>(`/v1/issues/${id}/work-products`);
+      if (!workProducts.length) {
+        console.log("No work products found.");
+        return;
+      }
+      console.log("\nWork Products\n" + "─".repeat(60));
+      for (const p of workProducts) {
+        const date = new Date(p.createdAt).toLocaleString();
+        console.log(`\x1b[1m${p.title}\x1b[0m (${p.type}) [${date}]:`);
+        if (p.filePath) console.log(`File: ${p.filePath}`);
+        console.log(`${p.content.slice(0, 1000)}${p.content.length > 1000 ? "..." : ""}\n`);
+        console.log("─".repeat(30));
+      }
+    });
+
   return cmd;
 }

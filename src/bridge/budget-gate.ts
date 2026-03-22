@@ -70,6 +70,43 @@ export class BudgetGate {
     // Hard limit check
     if (percentUsed >= policy.hardLimitPct) {
       log.warn({ companyId, agentSlug, percentUsed, limitUsd }, "Budget hard limit reached — BLOCKED");
+
+      // Create approval if it's an agent-specific check
+      if (agentSlug) {
+        // Pause the agent
+        try {
+          const agent = await this.db.agent.findUnique({
+            where: { companyId_slug: { companyId, slug: agentSlug } },
+          });
+
+          if (agent && agent.status !== "paused") {
+            await this.db.agent.update({
+              where: { id: agent.id },
+              data: { status: "paused" },
+            });
+
+            await this.db.approval.create({
+              data: {
+                companyId,
+                type: "budget_override",
+                status: "pending",
+                requestedBy: agentSlug,
+                metadata: JSON.stringify({
+                  agentSlug,
+                  percentUsed,
+                  currentUsageUsd,
+                  limitUsd,
+                }),
+              },
+            });
+
+            log.info({ companyId, agentSlug }, "Agent paused and budget_override approval created");
+          }
+        } catch (error: any) {
+          log.error({ companyId, agentSlug, error: error.message }, "Failed to pause agent or create approval");
+        }
+      }
+
       return {
         allowed: false,
         reason: `Budget hard limit reached (${percentUsed.toFixed(1)}% of $${limitUsd})`,

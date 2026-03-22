@@ -56,6 +56,36 @@ export async function agentRoutes(server: FastifyInstance) {
       return reply.code(400).send({ error: "companyId, slug, name, and model are required" });
     }
 
+    // Check if company requires approval for new agents
+    const company = await db.company.findUnique({ where: { id: companyId } });
+    if (!company) return reply.code(404).send({ error: "Company not found" });
+
+    if (company.requireApprovalForNewAgents) {
+      const approval = await db.approval.create({
+        data: {
+          companyId,
+          type: "hire_agent",
+          status: "pending",
+          requestedBy: "user",
+          metadata: JSON.stringify({
+            slug,
+            name,
+            role: role || name,
+            modelProvider: modelProvider || "claude-cli",
+            model,
+            reportsTo: reportsTo || null,
+            permissions: permissions || {},
+            heartbeatCron: heartbeatCron || null,
+          }),
+        },
+      });
+
+      return reply.code(202).send({
+        message: "Agent hire request submitted for approval",
+        approvalId: approval.id,
+      });
+    }
+
     const agent = await db.agent.create({
       data: {
         companyId,

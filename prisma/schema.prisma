@@ -15,6 +15,7 @@ model Company {
   slug      String   @unique
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  requireApprovalForNewAgents Boolean @default(false)
 
   agents         Agent[]
   projects       Project[]
@@ -29,6 +30,7 @@ model Company {
   scheduledJobs  ScheduledJob[]
   goals          Goal[]
   secrets        CompanySecret[]
+  approvals      Approval[]
 
   @@map("companies")
 }
@@ -132,6 +134,8 @@ model Issue {
   skillExecutions SkillExecution[]
   queueJobs       QueueJob[]
   executionWorkspace ExecutionWorkspace?
+  comments           IssueComment[]
+  workProducts       IssueWorkProduct[]
 
   @@map("issues")
 }
@@ -446,4 +450,43 @@ model CompanySecret {
 
   @@unique([companyId, name])
   @@map("company_secrets")
+}
+
+model Approval {
+  id          String   @id @default(cuid())
+  companyId   String
+  type        String   // hire_agent | budget_override | ceo_strategy
+  status      String   @default("pending")  // pending | approved | rejected | cancelled
+  requestedBy String   // agent slug veya "user"
+  metadata    String   @default("{}")  // JSON — bağlam bilgisi
+  requestedAt DateTime @default(now())
+  reviewedAt  DateTime?
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  @@map("approvals")
+}
+
+model IssueComment {
+  id        String   @id @default(cuid())
+  issueId   String
+  authorSlug String  // agent slug veya "user"
+  content   String
+  createdAt DateTime @default(now())
+
+  issue Issue @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  @@map("issue_comments")
+}
+
+model IssueWorkProduct {
+  id        String   @id @default(cuid())
+  issueId   String
+  agentSlug String
+  type      String   // code | doc | test | pr | analysis
+  title     String
+  content   String
+  filePath  String?
+  createdAt DateTime @default(now())
+
+  issue Issue @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  @@map("issue_work_products")
 }

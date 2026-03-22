@@ -159,4 +159,55 @@ export async function issueRoutes(server: FastifyInstance) {
 
     return { jobId };
   });
+
+  // GET /v1/issues/:id/comments
+  server.get<{ Params: { id: string } }>("/issues/:id/comments", async (request, reply) => {
+    const comments = await db.issueComment.findMany({
+      where: { issueId: request.params.id },
+      orderBy: { createdAt: "asc" },
+    });
+    return { comments };
+  });
+
+  // POST /v1/issues/:id/comments
+  server.post<{
+    Params: { id: string };
+    Body: { authorSlug: string; content: string };
+  }>("/issues/:id/comments", async (request, reply) => {
+    const comment = await db.issueComment.create({
+      data: {
+        issueId: request.params.id,
+        authorSlug: request.body.authorSlug,
+        content: request.body.content,
+      },
+    });
+    return { comment };
+  });
+
+  // GET /v1/issues/:id/work-products
+  server.get<{ Params: { id: string } }>("/issues/:id/work-products", async (request, reply) => {
+    const workProducts = await db.issueWorkProduct.findMany({
+      where: { issueId: request.params.id },
+      orderBy: { createdAt: "desc" },
+    });
+    return { workProducts };
+  });
+
+  // POST /v1/issues/:id/work-products
+  server.post<{
+    Params: { id: string };
+    Body: { agentSlug: string; type: string; title: string; content: string; filePath?: string };
+  }>("/issues/:id/work-products", async (request, reply) => {
+    const workProduct = await db.issueWorkProduct.create({
+      data: {
+        issueId: request.params.id,
+        agentSlug: request.body.agentSlug,
+        type: request.body.type,
+        title: request.body.title,
+        content: request.body.content,
+        filePath: request.body.filePath,
+      },
+    });
+    return { workProduct };
+  });
 }

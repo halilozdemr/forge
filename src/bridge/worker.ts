@@ -215,6 +215,49 @@ async function processJob(job: any): Promise<void> {
       },
     });
 
+    if (result.success && issueId) {
+      // Create work products
+      const output = result.output || "";
+      
+      // 1. Extract code blocks
+      const codeBlockRegex = /```(?:\w+)?\n([\s\S]*?)```/g;
+      let match;
+      while ((match = codeBlockRegex.exec(output)) !== null) {
+        const code = match[1].trim();
+        if (code) {
+          await db.issueWorkProduct.create({
+            data: {
+              issueId,
+              agentSlug,
+              type: "code",
+              title: "Generated Code",
+              content: code,
+            }
+          });
+        }
+      }
+
+      // 2. Analysis product (first 500 chars)
+      await db.issueWorkProduct.create({
+        data: {
+          issueId,
+          agentSlug,
+          type: "analysis",
+          title: "Execution Analysis",
+          content: output.slice(0, 500) + (output.length > 500 ? "..." : ""),
+        }
+      });
+
+      // 3. Completion comment
+      await db.issueComment.create({
+        data: {
+          issueId,
+          authorSlug: agentSlug,
+          content: `Agent ${agentSlug} completed the task.`,
+        }
+      });
+    }
+
     if (!result.success) {
       throw new Error(result.error || "Agent execution failed");
     }
