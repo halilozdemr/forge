@@ -3,6 +3,7 @@ import { createRunner } from "./runners/factory.js";
 import { BudgetGate } from "./budget-gate.js";
 import { createChildLogger } from "../utils/logger.js";
 import type { AgentJobData } from "./queue.js";
+import { addSyncEvent } from "../sync/worker.js";
 
 const log = createChildLogger("worker");
 
@@ -71,6 +72,10 @@ async function processJob(job: any): Promise<void> {
         where: { companyId, slug: agentSlug },
         data: { status: "paused" },
       });
+      const ag = await db.agent.findUnique({ where: { companyId_slug: { companyId, slug: agentSlug } } });
+      if (ag) {
+        addSyncEvent('agent.updated', { agentId: ag.id, status: "paused", companyId, slug: agentSlug, name: ag.name, role: ag.role });
+      }
       throw new Error(`Budget limit exceeded: ${budgetCheck.reason}`);
     }
 
@@ -79,6 +84,7 @@ async function processJob(job: any): Promise<void> {
         where: { id: issueId },
         data: { status: "in_progress" },
       });
+      addSyncEvent('issue.updated', { issueId, status: "in_progress", companyId });
     }
 
     const runner = createRunner(modelProvider);
@@ -111,17 +117,29 @@ async function processJob(job: any): Promise<void> {
             durationMs: result.durationMs,
           },
         });
+        
+        const now = new Date();
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+        const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+        const budgetRes = await db.costEvent.aggregate({
+          where: { companyId, createdAt: { gte: startOfMonth, lte: endOfMonth } },
+          _sum: { costUsd: true }
+        });
+        const monthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+        addSyncEvent('budget.updated', { companyId, month: monthStr, totalUsd: budgetRes._sum.costUsd || 0 });
       }
     }
 
     if (issueId) {
+      const finalStatus = result.success ? "done" : "failed";
       await db.issue.update({
         where: { id: issueId },
         data: {
-          status: result.success ? "done" : "failed",
+          status: finalStatus,
           result: result.output || result.error || null,
         },
       });
+      addSyncEvent('issue.updated', { issueId, status: finalStatus, companyId });
     }
 
     await db.queueJob.update({

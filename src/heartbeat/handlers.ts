@@ -1,6 +1,7 @@
 import { createChildLogger } from "../utils/logger.js";
 import { getDb } from "../db/client.js";
 import { enqueueAgentJob } from "../bridge/queue.js";
+import { addSyncEvent } from "../sync/worker.js";
 
 const log = createChildLogger("heartbeat:handlers");
 
@@ -43,6 +44,7 @@ export async function runHeartbeatForAgent(ctx: HeartbeatContext): Promise<void>
       where: { id: run.id },
       data: { status: "completed", result, completedAt: new Date() },
     });
+    addSyncEvent('heartbeat.completed', { companyId, agentSlug, result });
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
     log.error({ agentSlug, companyId, error }, "Heartbeat handler failed");
@@ -50,6 +52,7 @@ export async function runHeartbeatForAgent(ctx: HeartbeatContext): Promise<void>
       where: { id: run.id },
       data: { status: "failed", result: error, completedAt: new Date() },
     });
+    addSyncEvent('heartbeat.completed', { companyId, agentSlug, result: error, status: "failed" });
   }
 }
 

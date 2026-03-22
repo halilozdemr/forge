@@ -53,7 +53,7 @@ export function loadConfig(overrides: Partial<FirmConfig> = {}): FirmConfig {
   if (process.env.FIRM_PORT) envConfig.port = parseInt(process.env.FIRM_PORT, 10);
   if (process.env.FIRM_HOST) envConfig.host = process.env.FIRM_HOST;
   if (process.env.FIRM_CONCURRENCY) envConfig.concurrency = parseInt(process.env.FIRM_CONCURRENCY, 10);
-  if (process.env.DATABASE_URL) envConfig.databaseUrl = process.env.DATABASE_URL;
+  if (process.env.DATABASE_URL && process.env.DATABASE_URL.startsWith("file:")) envConfig.databaseUrl = process.env.DATABASE_URL;
   if (process.env.CLAUDE_PATH) envConfig.claudePath = process.env.CLAUDE_PATH;
   if (process.env.LOG_LEVEL) envConfig.logLevel = process.env.LOG_LEVEL;
 

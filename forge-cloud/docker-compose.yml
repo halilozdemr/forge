@@ -1,0 +1,26 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: forge_cloud
+      POSTGRES_USER: forge_cloud
+      POSTGRES_PASSWORD: forge_cloud
+    ports:
+      - "5434:5432"         # 5433 Forge v3 dev'de kullanılıyor, çakışmasın
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  forge-cloud:
+    build: .
+    ports:
+      - "4000:4000"
+    environment:
+      DATABASE_URL: postgresql://forge_cloud:forge_cloud@postgres:5432/forge_cloud
+      JWT_SECRET: ${JWT_SECRET}
+      PORT: 4000
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:

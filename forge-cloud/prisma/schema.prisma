@@ -1,0 +1,136 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Kullanıcılar
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  instances ForgeInstance[]
+  sessions  UserSession[]
+
+  @@map("users")
+}
+
+// Kullanıcının local Forge instance'ları (şimdilik 1 kullanıcı = 1 instance)
+model ForgeInstance {
+  id         String    @id @default(cuid())
+  userId     String
+  name       String    @default("default")
+  lastSyncAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  user    User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  agents  CloudAgent[]
+  issues  CloudIssue[]
+  sprints CloudSprint[]
+  budgets CloudBudget[]
+  events  SyncEvent[]
+
+  @@unique([userId, name])
+  @@map("forge_instances")
+}
+
+// Auth token'ları (CLI login session'ları)
+model UserSession {
+  id        String    @id @default(cuid())
+  userId    String
+  token     String    @unique
+  expiresAt DateTime
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_sessions")
+}
+
+// Agent snapshot (son bilinen durum)
+model CloudAgent {
+  id         String   @id @default(cuid())
+  instanceId String
+  agentId    String   // local forge'daki id
+  slug       String
+  name       String
+  role       String
+  status     String   @default("idle")
+  updatedAt  DateTime @updatedAt
+
+  instance ForgeInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  @@unique([instanceId, agentId])
+  @@map("cloud_agents")
+}
+
+// Issue snapshot
+model CloudIssue {
+  id              String   @id @default(cuid())
+  instanceId      String
+  issueId         String
+  title           String
+  status          String
+  priority        String   @default("normal")
+  type            String   @default("feature")
+  assignedAgentSlug String?
+  sprintId        String?
+  updatedAt       DateTime @updatedAt
+
+  instance ForgeInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  @@unique([instanceId, issueId])
+  @@map("cloud_issues")
+}
+
+// Sprint snapshot
+model CloudSprint {
+  id         String    @id @default(cuid())
+  instanceId String
+  sprintId   String
+  number     Int
+  goal       String
+  status     String    @default("planning")
+  startedAt  DateTime?
+  closedAt   DateTime?
+  updatedAt  DateTime  @updatedAt
+
+  instance ForgeInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  @@unique([instanceId, sprintId])
+  @@map("cloud_sprints")
+}
+
+// Budget snapshot (company bazlı aylık özet)
+model CloudBudget {
+  id         String   @id @default(cuid())
+  instanceId String
+  month      String   // "2026-03" formatı
+  totalUsd   Float    @default(0)
+  updatedAt  DateTime @updatedAt
+
+  instance ForgeInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  @@unique([instanceId, month])
+  @@map("cloud_budgets")
+}
+
+// Ham event log (audit trail)
+model SyncEvent {
+  id         String   @id @default(cuid())
+  instanceId String
+  eventType  String
+  payload    Json
+  receivedAt DateTime @default(now())
+
+  instance ForgeInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  @@index([instanceId, eventType, receivedAt])
+  @@map("sync_events")
+}
