@@ -6,6 +6,7 @@ export interface AgentRunnerConfig {
   input: string;
   permissions: Record<string, boolean>;
   adapterConfig?: Record<string, any>;
+  env?: Record<string, string>;
   sessionId?: string;
   timeoutMs?: number;
   onStream?: (chunk: string) => void;

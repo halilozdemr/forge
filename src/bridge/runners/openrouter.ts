@@ -5,7 +5,7 @@ const log = createChildLogger("openrouter");
 
 export class OpenRouterRunner implements AgentRunner {
   async run(config: AgentRunnerConfig): Promise<AgentResult> {
-    const apiKey = process.env.OPENROUTER_API_KEY;
+    const apiKey = config.env?.OPENROUTER_API_KEY || process.env.OPENROUTER_API_KEY;
     if (!apiKey) {
       return {
         success: false,

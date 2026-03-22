@@ -2,6 +2,7 @@ import { Command } from "commander";
 import { loadConfig } from "../../utils/config.js";
 import { buildHierarchy, formatHierarchy } from "../../agents/hierarchy.js";
 import { resolveCompany } from "../../utils/company.js";
+import { decrypt, redactSecrets } from "../../utils/crypto.js";
 
 function baseUrl(): string {
   return `http://localhost:${loadConfig().port}`;
@@ -246,6 +247,25 @@ export function agentCommand(): Command {
            : `${issueContext}\n\n${inputStr}`;
       }
 
+      // Fetch and decrypt secrets
+      const companySecrets = await db.companySecret.findMany({ where: { companyId } });
+      const secrets: Record<string, string> = {};
+      for (const s of companySecrets) {
+        try {
+          secrets[s.name] = decrypt(s.value);
+        } catch (e) {
+          // silently ignore decryption errors here
+        }
+      }
+
+      // Resolve placeholders in systemPrompt and inputStr
+      let finalSystemPrompt = systemPrompt;
+      for (const [name, value] of Object.entries(secrets)) {
+        const placeholder = new RegExp(`{{secrets\.${name}}}`, 'g');
+        finalSystemPrompt = finalSystemPrompt.replace(placeholder, value);
+        inputStr = inputStr.replace(placeholder, value);
+      }
+
       console.log(`\n\x1b[1m🚀 Starting direct execution for @${slug}\x1b[0m\n`);
 
       const { createRunner } = await import("../../bridge/runners/factory.js");
@@ -256,11 +276,15 @@ export function agentCommand(): Command {
           projectPath: config.projectPath,
           agentSlug: slug,
           model: agent.model,
-          systemPrompt,
+          systemPrompt: finalSystemPrompt,
           input: inputStr,
           permissions: JSON.parse(agent.permissions),
           adapterConfig: JSON.parse(agent.adapterConfig || "{}"),
-          onStream: (chunk) => process.stdout.write(chunk),
+          env: secrets,
+          onStream: (chunk) => {
+            const redacted = redactSecrets(chunk, secrets);
+            process.stdout.write(redacted);
+          },
         });
 
         console.log(`\n\n\x1b[1m✨ Execution complete (${result.durationMs}ms)\x1b[0m`);
@@ -275,6 +299,50 @@ export function agentCommand(): Command {
           });
         }
       }
+    });
+
+  cmd
+    .command("revisions <slug>")
+    .description("List agent config revisions")
+    .option("--company <id>", "Company ID")
+    .action(async (slug, opts) => {
+      const companyId = await resolveCompany(opts.company);
+      const params = `?companyId=${companyId}`;
+      const { revisions } = await api<{ revisions: any[] }>(`/v1/agents/${slug}/revisions${params}`);
+      
+      if (!revisions.length) {
+        console.log("No revisions found.");
+        return;
+      }
+
+      console.log("\nRevisions\n" + "─".repeat(80));
+      console.log(`  ${"REV".padEnd(4)} ${"CREATED AT".padEnd(24)} ${"CHANGE NOTE"}`);
+      console.log("─".repeat(80));
+      for (const r of revisions) {
+        const date = new Date(r.createdAt).toLocaleString();
+        const note = r.changeNote || "—";
+        console.log(`  ${r.revision.toString().padEnd(4)} ${date.padEnd(24)} ${note}`);
+      }
+      console.log();
+    });
+
+  cmd
+    .command("rollback <slug>")
+    .description("Rollback agent config to a specific revision")
+    .option("--company <id>", "Company ID")
+    .option("--rev <n>", "Revision number")
+    .action(async (slug, opts) => {
+      const companyId = await resolveCompany(opts.company);
+      if (!opts.rev) throw new Error("Revision number (--rev <n>) is required");
+
+      const revNum = parseInt(opts.rev, 10);
+      if (isNaN(revNum)) throw new Error("Revision must be a number");
+
+      const { message } = await api<{ message: string }>(`/v1/agents/${slug}/rollback`, "PUT", {
+        companyId,
+        revision: revNum,
+      });
+      console.log(message);
     });
 
   return cmd;

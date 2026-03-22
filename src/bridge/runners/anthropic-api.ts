@@ -5,11 +5,11 @@ const log = createChildLogger("anthropic-api");
 
 export class AnthropicApiRunner implements AgentRunner {
   async run(config: AgentRunnerConfig): Promise<AgentResult> {
-    const apiKey = process.env.ANTHROPIC_API_KEY;
+    const apiKey = config.env?.ANTHROPIC_API_KEY || process.env.ANTHROPIC_API_KEY;
     if (!apiKey) {
       return {
         success: false,
-        error: "ANTHROPIC_API_KEY not configured",
+        error: "ANTHROPIC_API_KEY not configured (provide in secrets or as env var)",
         durationMs: 0,
         provider: "anthropic-api",
       };

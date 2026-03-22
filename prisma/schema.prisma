@@ -28,6 +28,7 @@ model Company {
   heartbeatRuns  HeartbeatRun[]
   scheduledJobs  ScheduledJob[]
   goals          Goal[]
+  secrets        CompanySecret[]
 
   @@map("companies")
 }
@@ -79,6 +80,7 @@ model Agent {
   costEvents  CostEvent[]
   assignedIssues Issue[]   @relation("AssignedAgent")
   runtimeState AgentRuntimeState?
+  revisions    AgentConfigRevision[]
 
   @@unique([companyId, slug])
   @@map("agents")
@@ -414,4 +416,34 @@ model AgentTaskSession {
 
   @@unique([agentId, issueId])
   @@map("agent_task_sessions")
+}
+
+model AgentConfigRevision {
+  id         String   @id @default(cuid())
+  agentId    String
+  revision   Int
+  config     String   // JSON snapshot
+  changeNote String?
+  createdAt  DateTime @default(now())
+
+  agent Agent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@unique([agentId, revision])
+  @@map("agent_config_revisions")
+}
+
+// 21. Company Secrets
+model CompanySecret {
+  id          String   @id @default(cuid())
+  companyId   String
+  name        String
+  description String?
+  value       String   // AES-256 encrypted
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, name])
+  @@map("company_secrets")
 }

@@ -6,6 +6,7 @@ import type { AgentJobData } from "./queue.js";
 import { addSyncEvent } from "../sync/worker.js";
 import { resolveWorkspace, cleanWorkspace } from "./workspace.js";
 import { updateSessionUsage, shouldRotate, rotateSession } from "./session.js";
+import { decrypt, redactSecrets } from "../utils/crypto.js";
 
 const log = createChildLogger("worker");
 
@@ -64,6 +65,26 @@ async function processJob(job: any): Promise<void> {
   const data: AgentJobData = JSON.parse(job.payload);
   const { companyId, agentSlug, modelProvider, agentModel, systemPrompt, input, permissions, adapterConfig, projectPath, issueId, sessionId, timeoutMs } = data;
 
+  // Fetch and decrypt secrets
+  const companySecrets = await db.companySecret.findMany({ where: { companyId } });
+  const secrets: Record<string, string> = {};
+  for (const s of companySecrets) {
+    try {
+      secrets[s.name] = decrypt(s.value);
+    } catch (e) {
+      log.warn({ secret: s.name }, "Failed to decrypt secret");
+    }
+  }
+
+  // Resolve placeholders in prompt and input
+  let effectiveSystemPrompt = systemPrompt;
+  let effectiveInput = input;
+  for (const [name, value] of Object.entries(secrets)) {
+    const placeholder = new RegExp(`{{secrets\.${name}}}`, 'g');
+    effectiveSystemPrompt = effectiveSystemPrompt.replace(placeholder, value);
+    effectiveInput = effectiveInput.replace(placeholder, value);
+  }
+
   log.info({ jobId: job.id, agent: agentSlug }, "Processing job");
 
   try {
@@ -99,12 +120,18 @@ async function processJob(job: any): Promise<void> {
       projectPath: effectiveProjectPath,
       agentSlug,
       model: agentModel,
-      systemPrompt,
-      input,
+      systemPrompt: effectiveSystemPrompt,
+      input: effectiveInput,
       permissions,
       adapterConfig,
+      env: secrets, // Inject secrets as environment variables
       sessionId,
       timeoutMs,
+      onStream: (chunk) => {
+        // Redact stream output
+        const redacted = redactSecrets(chunk, secrets);
+        // Worker-specific stream handling can be added here if needed (e.g. WebSocket)
+      }
     });
 
     if (result.tokenUsage) {
@@ -217,7 +244,8 @@ async function processJob(job: any): Promise<void> {
     log.info({ jobId: job.id, agent: agentSlug }, "Job completed");
 
   } catch (err: any) {
-    log.error({ jobId: job.id, agent: agentSlug, error: err.message }, "Job failed");
+    const redactedError = redactSecrets(err.message, secrets);
+    log.error({ jobId: job.id, agent: agentSlug, error: redactedError }, "Job failed");
     const isRetryable = job.attempts < job.maxAttempts;
     await db.queueJob.update({
       where: { id: job.id },

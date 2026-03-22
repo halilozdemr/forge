@@ -37,6 +37,7 @@ export class HttpRunner implements AgentRunner {
           model: config.model,
           projectPath: config.projectPath,
           agentSlug: config.agentSlug,
+          env: config.env,
         }),
         signal: controller.signal,
       });

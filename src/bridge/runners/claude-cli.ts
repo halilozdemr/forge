@@ -65,6 +65,7 @@ export class ClaudeCliRunner implements AgentRunner {
 
         const proc = spawn(claudePath, args, {
           cwd: config.projectPath,
+          env: { ...process.env, ...config.env },
         });
 
         proc.stdin!.write(config.input);

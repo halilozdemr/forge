@@ -29,7 +29,7 @@ export class ProcessRunner implements AgentRunner {
       try {
         const proc = spawn(command, args, {
           cwd: config.projectPath,
-          env: process.env,
+          env: { ...process.env, ...config.env },
         });
 
         proc.stdin!.write(config.input);

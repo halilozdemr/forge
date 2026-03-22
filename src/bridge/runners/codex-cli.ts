@@ -19,7 +19,7 @@ export class CodexCliRunner implements AgentRunner {
         
         const proc = spawn("codex", args, {
           cwd: config.projectPath,
-          env: process.env,
+          env: { ...process.env, ...config.env },
         });
 
         proc.stdin!.end();

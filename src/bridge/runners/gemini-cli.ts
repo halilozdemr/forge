@@ -23,7 +23,7 @@ export class GeminiCliRunner implements AgentRunner {
 
         const proc = spawn("gemini", args, {
           cwd: config.projectPath,
-          env: process.env,
+          env: { ...process.env, ...config.env },
         });
 
         proc.stdin!.end();

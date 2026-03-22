@@ -81,12 +81,18 @@ export async function agentRoutes(server: FastifyInstance) {
   // PUT /v1/agents/:slug (update)
   server.put<{
     Params: { slug: string };
-    Body: { companyId: string; status?: string; model?: string; heartbeatCron?: string | null };
+    Body: { companyId: string; status?: string; model?: string; heartbeatCron?: string | null; changeNote?: string };
   }>("/agents/:slug", async (request, reply) => {
     const { slug } = request.params;
-    const { companyId, status, ...updates } = request.body;
+    const { companyId, status, changeNote, ...updates } = request.body;
 
     if (!companyId) return reply.code(400).send({ error: "companyId required" });
+
+    const currentAgent = await db.agent.findUnique({
+      where: { companyId_slug: { companyId, slug } },
+    });
+
+    if (!currentAgent) return reply.code(404).send({ error: "Agent not found" });
 
     // Handle status transitions separately
     if (status) {
@@ -96,8 +102,41 @@ export async function agentRoutes(server: FastifyInstance) {
       }
     }
 
-    // Apply other updates
+    // Apply other updates and create revision if needed
     if (Object.keys(updates).length > 0) {
+      // Create revision snapshot of current state BEFORE applying updates
+      const lastRevision = await db.agentConfigRevision.findFirst({
+        where: { agentId: currentAgent.id },
+        orderBy: { revision: "desc" },
+      });
+
+      const nextRevision = (lastRevision?.revision ?? 0) + 1;
+
+      // Prepare snapshot config
+      const snapshot = {
+        name: currentAgent.name,
+        role: currentAgent.role,
+        modelProvider: currentAgent.modelProvider,
+        model: currentAgent.model,
+        promptFile: currentAgent.promptFile,
+        reportsTo: currentAgent.reportsTo,
+        permissions: currentAgent.permissions,
+        adapterConfig: currentAgent.adapterConfig,
+        heartbeatCron: currentAgent.heartbeatCron,
+        maxSessionRuns: currentAgent.maxSessionRuns,
+        maxSessionTokens: currentAgent.maxSessionTokens,
+        maxSessionAgeHours: currentAgent.maxSessionAgeHours,
+      };
+
+      await db.agentConfigRevision.create({
+        data: {
+          agentId: currentAgent.id,
+          revision: nextRevision,
+          config: JSON.stringify(snapshot),
+          changeNote: changeNote || null,
+        },
+      });
+
       await db.agent.update({
         where: { companyId_slug: { companyId, slug } },
         data: updates,
@@ -109,6 +148,94 @@ export async function agentRoutes(server: FastifyInstance) {
     });
 
     return { agent };
+  });
+
+  // GET /v1/agents/:slug/revisions
+  server.get<{ Params: { slug: string }; Querystring: { companyId: string } }>(
+    "/agents/:slug/revisions",
+    async (request, reply) => {
+      const { slug } = request.params;
+      const { companyId } = request.query;
+      if (!companyId) return reply.code(400).send({ error: "companyId required" });
+
+      const agent = await db.agent.findUnique({
+        where: { companyId_slug: { companyId, slug } },
+      });
+      if (!agent) return reply.code(404).send({ error: "Agent not found" });
+
+      const revisions = await db.agentConfigRevision.findMany({
+        where: { agentId: agent.id },
+        orderBy: { revision: "desc" },
+      });
+
+      return { revisions };
+    }
+  );
+
+  // PUT /v1/agents/:slug/rollback
+  server.put<{
+    Params: { slug: string };
+    Body: { companyId: string; revision: number };
+  }>("/agents/:slug/rollback", async (request, reply) => {
+    const { slug } = request.params;
+    const { companyId, revision } = request.body;
+
+    if (!companyId || !revision) {
+      return reply.code(400).send({ error: "companyId and revision are required" });
+    }
+
+    const agent = await db.agent.findUnique({
+      where: { companyId_slug: { companyId, slug } },
+    });
+    if (!agent) return reply.code(404).send({ error: "Agent not found" });
+
+    const targetRevision = await db.agentConfigRevision.findUnique({
+      where: { agentId_revision: { agentId: agent.id, revision } },
+    });
+
+    if (!targetRevision) {
+      return reply.code(404).send({ error: `Revision ${revision} not found` });
+    }
+
+    const config = JSON.parse(targetRevision.config);
+
+    // Create a revision of the current state before rolling back
+    const lastRevision = await db.agentConfigRevision.findFirst({
+      where: { agentId: agent.id },
+      orderBy: { revision: "desc" },
+    });
+
+    const nextRevision = (lastRevision?.revision ?? 0) + 1;
+    const currentSnapshot = {
+      name: agent.name,
+      role: agent.role,
+      modelProvider: agent.modelProvider,
+      model: agent.model,
+      promptFile: agent.promptFile,
+      reportsTo: agent.reportsTo,
+      permissions: agent.permissions,
+      adapterConfig: agent.adapterConfig,
+      heartbeatCron: agent.heartbeatCron,
+      maxSessionRuns: agent.maxSessionRuns,
+      maxSessionTokens: agent.maxSessionTokens,
+      maxSessionAgeHours: agent.maxSessionAgeHours,
+    };
+
+    await db.agentConfigRevision.create({
+      data: {
+        agentId: agent.id,
+        revision: nextRevision,
+        config: JSON.stringify(currentSnapshot),
+        changeNote: `Rollback to revision ${revision}`,
+      },
+    });
+
+    const updatedAgent = await db.agent.update({
+      where: { id: agent.id },
+      data: config,
+    });
+
+    return { agent: updatedAgent, message: `Rolled back to revision ${revision}` };
   });
 
   // DELETE /v1/agents/:slug (fire/terminate)

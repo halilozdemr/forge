@@ -14,6 +14,7 @@ import { loginCommand } from "./commands/login.js";
 import { logoutCommand } from "./commands/logout.js";
 import { queueCommand } from "./commands/queue.js";
 import { goalCommand } from "./commands/goal.js";
+import { secretCommand } from "./commands/secret.js";
 
 const program = new Command("forge");
 
@@ -36,5 +37,6 @@ program.addCommand(loginCommand());
 program.addCommand(logoutCommand());
 program.addCommand(queueCommand());
 program.addCommand(goalCommand());
+program.addCommand(secretCommand());
 
 program.parse(process.argv);

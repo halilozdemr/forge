@@ -30,6 +30,7 @@ export class CursorRunner implements AgentRunner {
             projectPath: config.projectPath,
             agentSlug: config.agentSlug,
             model: config.model,
+            env: config.env,
           }
         }),
         signal: controller.signal,
