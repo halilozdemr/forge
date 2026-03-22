@@ -54,6 +54,10 @@ export class ClaudeCliRunner implements AgentRunner {
           args.push("--system-prompt", config.systemPrompt);
         }
 
+        if (config.sessionId) {
+          args.push("-r", config.sessionId);
+        }
+
         const allowedTools = resolveAllowedTools(config.permissions);
         if (allowedTools) {
           args.push("--allowedTools", allowedTools);

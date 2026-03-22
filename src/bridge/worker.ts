@@ -5,6 +5,7 @@ import { createChildLogger } from "../utils/logger.js";
 import type { AgentJobData } from "./queue.js";
 import { addSyncEvent } from "../sync/worker.js";
 import { resolveWorkspace, cleanWorkspace } from "./workspace.js";
+import { updateSessionUsage, shouldRotate, rotateSession } from "./session.js";
 
 const log = createChildLogger("worker");
 
@@ -61,7 +62,7 @@ async function processJob(job: any): Promise<void> {
   const db = getDb();
   const budgetGate = new BudgetGate(db);
   const data: AgentJobData = JSON.parse(job.payload);
-  const { companyId, agentSlug, modelProvider, agentModel, systemPrompt, input, permissions, adapterConfig, projectPath, issueId, timeoutMs } = data;
+  const { companyId, agentSlug, modelProvider, agentModel, systemPrompt, input, permissions, adapterConfig, projectPath, issueId, sessionId, timeoutMs } = data;
 
   log.info({ jobId: job.id, agent: agentSlug }, "Processing job");
 
@@ -102,6 +103,7 @@ async function processJob(job: any): Promise<void> {
       input,
       permissions,
       adapterConfig,
+      sessionId,
       timeoutMs,
     });
 
@@ -134,6 +136,17 @@ async function processJob(job: any): Promise<void> {
         });
         const monthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
         addSyncEvent('budget.updated', { companyId, month: monthStr, totalUsd: budgetRes._sum.costUsd || 0 });
+
+        // Phase 5: Session Usage and Rotation
+        await updateSessionUsage(agent.id, issueId || undefined, result.tokenUsage);
+        
+        const runtimeState = await db.agentRuntimeState.findUnique({ where: { agentId: agent.id } });
+        if (runtimeState && shouldRotate(runtimeState as any, agent)) {
+          const { handoffNote } = await rotateSession(agent.id, issueId || undefined);
+          if (handoffNote && data.nextAction) {
+            data.nextAction.input = handoffNote + "\n\n" + data.nextAction.input;
+          }
+        }
       }
     }
 

@@ -1,6 +1,7 @@
 import { getDb } from "../db/client.js";
 import { createChildLogger } from "../utils/logger.js";
 import { AgentRegistry } from "../agents/registry.js";
+import { resolveSession } from "./session.js";
 
 const log = createChildLogger("queue");
 
@@ -15,6 +16,7 @@ export interface AgentJobData {
   adapterConfig?: Record<string, any>;
   projectPath: string;
   issueId?: string;
+  sessionId?: string;
   timeoutMs?: number;
   nextAction?: {
     agentSlug: string;
@@ -118,6 +120,7 @@ export async function enqueueAgentJob(opts: {
     adapterConfig: JSON.parse(agent.adapterConfig || "{}"),
     projectPath: process.cwd(),
     issueId: opts.issueId,
+    sessionId: await resolveSession(opts.agentId, opts.issueId),
     nextAction: opts.nextAction,
   };
 

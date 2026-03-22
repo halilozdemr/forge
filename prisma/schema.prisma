@@ -68,6 +68,9 @@ model Agent {
   adapterConfig String  @default("{}")
   maxConcurrent Int     @default(1)
   heartbeatCron String?
+  maxSessionRuns   Int @default(20)
+  maxSessionTokens Int @default(100000)
+  maxSessionAgeHours Int @default(24)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
@@ -75,6 +78,7 @@ model Agent {
   apiKeys     AgentApiKey[]
   costEvents  CostEvent[]
   assignedIssues Issue[]   @relation("AssignedAgent")
+  runtimeState AgentRuntimeState?
 
   @@unique([companyId, slug])
   @@map("agents")
@@ -384,4 +388,30 @@ model ExecutionWorkspace {
 
   issue Issue @relation(fields: [issueId], references: [id], onDelete: Cascade)
   @@map("execution_workspaces")
+}
+
+// 20. Agent Session Persistence
+model AgentRuntimeState {
+  id          String   @id @default(cuid())
+  agentId     String   @unique
+  sessionId   String?
+  tokenCount  Int      @default(0)
+  runCount    Int      @default(0)
+  lastUsedAt  DateTime @updatedAt
+
+  agent Agent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  @@map("agent_runtime_state")
+}
+
+model AgentTaskSession {
+  id         String    @id @default(cuid())
+  agentId    String
+  issueId    String
+  sessionId  String
+  tokenCount Int       @default(0)
+  createdAt  DateTime  @default(now())
+  closedAt   DateTime?
+
+  @@unique([agentId, issueId])
+  @@map("agent_task_sessions")
 }
