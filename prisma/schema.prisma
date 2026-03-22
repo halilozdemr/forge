@@ -125,6 +125,7 @@ model Issue {
 
   skillExecutions SkillExecution[]
   queueJobs       QueueJob[]
+  executionWorkspace ExecutionWorkspace?
 
   @@map("issues")
 }
@@ -367,4 +368,20 @@ model Goal {
 
   @@index([companyId, level])
   @@map("goals")
+}
+
+// 19. Execution Workspaces
+model ExecutionWorkspace {
+  id            String    @id @default(cuid())
+  issueId       String    @unique
+  agentSlug     String
+  policy        String    @default("shared")  // shared | per_task | git_worktree
+  workspacePath String
+  branchName    String?
+  status        String    @default("active")  // active | completed | cleaned
+  createdAt     DateTime  @default(now())
+  cleanedAt     DateTime?
+
+  issue Issue @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  @@map("execution_workspaces")
 }

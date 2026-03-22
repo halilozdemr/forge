@@ -4,6 +4,7 @@ import { BudgetGate } from "./budget-gate.js";
 import { createChildLogger } from "../utils/logger.js";
 import type { AgentJobData } from "./queue.js";
 import { addSyncEvent } from "../sync/worker.js";
+import { resolveWorkspace, cleanWorkspace } from "./workspace.js";
 
 const log = createChildLogger("worker");
 
@@ -87,9 +88,14 @@ async function processJob(job: any): Promise<void> {
       addSyncEvent('issue.updated', { issueId, status: "in_progress", companyId });
     }
 
+    let effectiveProjectPath = projectPath;
+    if (issueId) {
+      effectiveProjectPath = await resolveWorkspace(issueId, companyId, agentSlug);
+    }
+
     const runner = createRunner(modelProvider);
     const result = await runner.run({
-      projectPath,
+      projectPath: effectiveProjectPath,
       agentSlug,
       model: agentModel,
       systemPrompt,
@@ -219,6 +225,10 @@ async function processJob(job: any): Promise<void> {
           executionJobId: null,
         }
       });
+    }
+  } finally {
+    if (issueId) {
+      await cleanWorkspace(issueId);
     }
   }
 }

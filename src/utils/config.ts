@@ -10,6 +10,10 @@ export interface FirmConfig {
   claudePath: string;
   projectPath: string;
   logLevel: string;
+  workspace: {
+    policy: "shared" | "per_task" | "git_worktree";
+    autoPr?: boolean;
+  };
 }
 
 const DEFAULT_DB_PATH = join(homedir(), ".forge", "forge.db");
@@ -22,6 +26,10 @@ const DEFAULT_CONFIG: FirmConfig = {
   claudePath: "",
   projectPath: process.cwd(),
   logLevel: "info",
+  workspace: {
+    policy: "shared",
+    autoPr: false,
+  },
 };
 
 function findClaudeCli(): string {
@@ -39,7 +47,10 @@ function findClaudeCli(): string {
 export function loadConfig(overrides: Partial<FirmConfig> = {}): FirmConfig {
   // Load from .firmrc if exists
   let fileConfig: Partial<FirmConfig> = {};
-  const rcPath = join(process.cwd(), ".firm", "config.json");
+  const rcPathFirm = join(process.cwd(), ".firm", "config.json");
+  const rcPathForge = join(process.cwd(), ".forge", "config.json");
+  const rcPath = existsSync(rcPathForge) ? rcPathForge : rcPathFirm;
+  
   if (existsSync(rcPath)) {
     try {
       fileConfig = JSON.parse(readFileSync(rcPath, "utf-8"));
