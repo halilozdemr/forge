@@ -63,7 +63,7 @@ export async function issueRoutes(server: FastifyInstance) {
           actor: "user",
           action: "issue.created",
           resource: `issue:${issue.id}`,
-          metadata: { title: issue.title, type: issue.type },
+          metadata: JSON.stringify({ title: issue.title, type: issue.type }),
         },
       });
     }
@@ -110,7 +110,7 @@ export async function issueRoutes(server: FastifyInstance) {
       data: {
         ...(status !== undefined && { status }),
         ...(result !== undefined && { result }),
-        ...(metadata !== undefined && { metadata: metadata as any }),
+        ...(metadata !== undefined && { metadata: JSON.stringify(metadata) }),
         ...(assignedAgentId !== undefined && {
           assignedAgent: assignedAgentId
             ? { connect: { id: assignedAgentId } }

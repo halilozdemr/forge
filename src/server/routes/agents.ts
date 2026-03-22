@@ -65,7 +65,7 @@ export async function agentRoutes(server: FastifyInstance) {
         modelProvider: modelProvider || "claude-cli",
         model,
         reportsTo: reportsTo || null,
-        permissions: permissions || {},
+        permissions: JSON.stringify(permissions || {}),
         heartbeatCron: heartbeatCron || null,
         status: "idle",
       },

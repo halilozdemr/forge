@@ -25,15 +25,16 @@ export function OverviewPage() {
       return;
     }
     const color = status.status === 'healthy' ? 'green' : (status.status === 'degraded' ? 'amber' : 'red');
+    const components = status.components || { db: false, redis: false, worker: false };
     healthCard.innerHTML = `
       <h3>System Health</h3>
       <div class="status-summary">
         <span class="badge badge-${color}">${esc(status.status.toUpperCase())}</span>
       </div>
       <div class="health-details">
-        <div class="health-item">DB: <span class="badge badge-${status.components.db ? 'green' : 'red'}">${status.components.db ? 'OK' : 'DOWN'}</span></div>
-        <div class="health-item">Redis: <span class="badge badge-${status.components.redis ? 'green' : 'red'}">${status.components.redis ? 'OK' : 'DOWN'}</span></div>
-        <div class="health-item">Worker: <span class="badge badge-${status.components.worker ? 'green' : 'red'}">${status.components.worker ? 'OK' : 'DOWN'}</span></div>
+        <div class="health-item">DB: <span class="badge badge-${components.db ? 'green' : 'red'}">${components.db ? 'OK' : 'DOWN'}</span></div>
+        <div class="health-item">Redis: <span class="badge badge-${components.redis ? 'green' : 'red'}">${components.redis ? 'OK' : 'DOWN'}</span></div>
+        <div class="health-item">Worker: <span class="badge badge-${components.worker ? 'green' : 'red'}">${components.worker ? 'OK' : 'DOWN'}</span></div>
       </div>
     `;
   });

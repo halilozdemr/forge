@@ -10,6 +10,8 @@ import { sprintCommand } from "./commands/sprint.js";
 import { budgetCommand } from "./commands/budget.js";
 import { heartbeatCommand } from "./commands/heartbeat.js";
 import { companyCommand } from "./commands/company.js";
+import { loginCommand } from "./commands/login.js";
+import { logoutCommand } from "./commands/logout.js";
 
 const program = new Command("forge");
 
@@ -28,5 +30,7 @@ program.addCommand(sprintCommand());
 program.addCommand(budgetCommand());
 program.addCommand(heartbeatCommand());
 program.addCommand(companyCommand());
+program.addCommand(loginCommand());
+program.addCommand(logoutCommand());
 
 program.parse(process.argv);

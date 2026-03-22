@@ -152,7 +152,7 @@ export async function seedDatabase(db: PrismaClient, options: SeedOptions): Prom
         model: agentDef.model,
         reportsTo: agentDef.reportsTo,
         status: "idle",
-        permissions: agentDef.permissions,
+        permissions: JSON.stringify(agentDef.permissions),
         heartbeatCron: agentDef.heartbeatCron,
       },
     });

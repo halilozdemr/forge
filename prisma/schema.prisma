@@ -4,7 +4,7 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "sqlite"
   url      = env("DATABASE_URL")
 }
 
@@ -26,6 +26,7 @@ model Company {
   configEntries  ConfigEntry[]
   queueJobs      QueueJob[]
   heartbeatRuns  HeartbeatRun[]
+  scheduledJobs  ScheduledJob[]
 
   @@map("companies")
 }
@@ -37,7 +38,7 @@ model Project {
   name       String
   path       String
   stack      String  @default("other")
-  config     Json    @default("{}")
+  config     String  @default("{}")
   readmePath String?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
@@ -62,7 +63,7 @@ model Agent {
   promptFile    String?
   reportsTo     String?
   status        String  @default("idle")
-  permissions   Json    @default("{}")
+  permissions   String  @default("{}")
   maxConcurrent Int     @default(1)
   heartbeatCron String?
   createdAt     DateTime @default(now())
@@ -105,7 +106,7 @@ model Issue {
   assignedAgentId String?
   parentIssueId   String?
   result          String?
-  metadata        Json    @default("{}")
+  metadata        String  @default("{}")
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -150,7 +151,7 @@ model CostEvent {
   provider     String
   inputTokens  Int      @default(0)
   outputTokens Int      @default(0)
-  costUsd      Decimal  @default(0) @db.Decimal(10, 6)
+  costUsd      Float    @default(0)
   durationMs   Int      @default(0)
   createdAt    DateTime @default(now())
 
@@ -168,7 +169,7 @@ model BudgetPolicy {
   companyId       String
   scope           String  @default("company")
   scopeId         String?
-  monthlyLimitUsd Decimal @db.Decimal(10, 2)
+  monthlyLimitUsd Float
   softLimitPct    Int     @default(80)
   hardLimitPct    Int     @default(100)
   action          String  @default("warn")
@@ -239,7 +240,7 @@ model ActivityLog {
   actor     String
   action    String
   resource  String?
-  metadata  Json     @default("{}")
+  metadata  String   @default("{}")
   createdAt DateTime @default(now())
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
@@ -248,25 +249,28 @@ model ActivityLog {
   @@map("activity_logs")
 }
 
-// 13. Queue Jobs (BullMQ mirror)
+// 13. Queue Jobs (SQLite polling)
 model QueueJob {
   id          String    @id @default(cuid())
-  bullmqJobId String    @unique
   companyId   String
   agentSlug   String
   issueId     String?
-  status      String    @default("queued")
+  type        String    @default("agent_task")
+  payload     String    @default("{}")
+  status      String    @default("pending")
   attempts    Int       @default(0)
   maxAttempts Int       @default(3)
-  result      Json?
+  result      String?
   error       String?
-  queuedAt    DateTime  @default(now())
+  scheduledAt DateTime  @default(now())
   startedAt   DateTime?
   completedAt DateTime?
+  queuedAt    DateTime  @default(now())
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
   issue   Issue?  @relation(fields: [issueId], references: [id])
 
+  @@index([status, scheduledAt])
   @@index([companyId, status])
   @@map("queue_jobs")
 }
@@ -292,7 +296,7 @@ model ConfigEntry {
   id        String  @id @default(cuid())
   companyId String?
   key       String
-  value     Json
+  value     String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -300,4 +304,38 @@ model ConfigEntry {
 
   @@unique([companyId, key])
   @@map("config_entries")
+}
+
+// 16. Scheduled Jobs
+model ScheduledJob {
+  id             String    @id @default(cuid())
+  jobKey         String    @unique
+  companyId      String
+  agentSlug      String
+  cronExpression String
+  nextRunAt      DateTime
+  lastRunAt      DateTime?
+  enabled        Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([enabled, nextRunAt])
+  @@map("scheduled_jobs")
+}
+
+// 17. Sync Outbox
+model SyncOutbox {
+  id            String    @id @default(cuid())
+  eventType     String
+  payload       String
+  status        String    @default("pending")
+  attempts      Int       @default(0)
+  lastAttemptAt DateTime?
+  sentAt        DateTime?
+  createdAt     DateTime  @default(now())
+
+  @@index([status, createdAt])
+  @@map("sync_outbox")
 }

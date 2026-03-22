@@ -56,7 +56,7 @@ export async function transitionAgent(
       actor: "system",
       action: `agent.${newStatus}`,
       resource: `agent:${slug}`,
-      metadata: { from: currentStatus, to: newStatus },
+      metadata: JSON.stringify({ from: currentStatus, to: newStatus }),
     },
   });
 

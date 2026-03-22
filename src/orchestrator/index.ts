@@ -75,7 +75,7 @@ export class FirmOrchestrator {
           modelProvider: agent.modelProvider,
           systemPrompt,
           input: step.input,
-          permissions: (agent.permissions as Record<string, boolean>) ?? {},
+          permissions: JSON.parse(agent.permissions) as Record<string, boolean>,
           projectPath,
           issueId,
           nextAction: nextStep
@@ -99,11 +99,11 @@ export class FirmOrchestrator {
         actor: "system",
         action: "pipeline.dispatched",
         resource: `issue:${issueId}`,
-        metadata: {
+        metadata: JSON.stringify({
           issueType,
           pipelineLength: steps.length,
           firstAgent: steps[0].agentSlug,
-        },
+        }),
       },
     });
 
