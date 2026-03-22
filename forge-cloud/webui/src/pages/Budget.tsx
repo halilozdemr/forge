@@ -1,14 +1,18 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useContext } from 'react';
 import { api } from '../api';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { CompanyContext } from '../App';
 
 export default function BudgetPage() {
+  const { companyId } = useContext(CompanyContext);
   const [budget, setBudget] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api.getBudget().then(res => { setBudget(res); setLoading(false); }).catch(() => setLoading(false));
-  }, []);
+    if (companyId) {
+      api.getBudget(companyId).then(res => { setBudget(res); setLoading(false); }).catch(() => setLoading(false));
+    }
+  }, [companyId]);
 
   if (loading) return <div className="animate-pulse h-64 bg-slate-800 rounded-xl"></div>;
 

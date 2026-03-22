@@ -1,5 +1,6 @@
 import { Command } from "commander";
 import { loadConfig } from "../../utils/config.js";
+import { resolveCompany } from "../../utils/company.js";
 
 function baseUrl(): string {
   return `http://localhost:${loadConfig().port}`;
@@ -36,10 +37,11 @@ export function issueCommand(): Command {
     .option("--status <status>", "Filter by status")
     .option("--company <id>", "Company ID")
     .action(async (opts) => {
+      const companyId = await resolveCompany(opts.company);
       const params = new URLSearchParams();
       if (opts.project) params.set("projectId", opts.project);
       if (opts.status) params.set("status", opts.status);
-      if (opts.company) params.set("companyId", opts.company);
+      params.set("companyId", companyId);
 
       const { issues } = await api<{ issues: any[] }>(`/v1/issues?${params}`);
       if (!issues.length) {
@@ -90,6 +92,21 @@ export function issueCommand(): Command {
       if (issue.sprint) console.log(`Sprint:   #${issue.sprint.number} — ${issue.sprint.goal}`);
       if (issue.result) console.log(`\nResult:\n${issue.result.slice(0, 500)}`);
       console.log();
+    });
+
+  cmd
+    .command("run <id>")
+    .description("Execute an issue immediately")
+    .option("--company <id>", "Company ID")
+    .option("--agent <slug>", "Agent override")
+    .action(async (id, opts) => {
+      const companyId = await resolveCompany(opts.company);
+      const { jobId } = await api<{ jobId: string }>(`/v1/issues/${id}/run`, "POST", {
+        companyId,
+        agentSlug: opts.agent,
+      });
+      console.log(`Issue ${id} enqueued for execution. Job ID: ${jobId}`);
+      console.log(`Check status with: \x1b[1mnpx forge queue status --job ${jobId}\x1b[0m`);
     });
 
   return cmd;

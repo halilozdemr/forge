@@ -39,9 +39,11 @@ export const api = {
     return json;
   },
   
-  getSummary: () => fetchWithAuth('/dashboard/summary'),
-  getAgents: () => fetchWithAuth('/dashboard/agents'),
-  getIssues: () => fetchWithAuth('/dashboard/issues'),
-  getSprints: () => fetchWithAuth('/dashboard/sprints'),
-  getBudget: () => fetchWithAuth('/dashboard/budget'),
+  getCompanies: () => fetchWithAuth('/v1/companies'),
+  
+  getSummary: (companyId: string) => fetchWithAuth(`/v1/status?companyId=${companyId}`),
+  getAgents: (companyId: string) => fetchWithAuth(`/v1/agents?companyId=${companyId}`),
+  getIssues: (companyId: string) => fetchWithAuth(`/v1/issues?companyId=${companyId}`),
+  getSprints: (companyId: string) => fetchWithAuth(`/v1/sprints?companyId=${companyId}`),
+  getBudget: (companyId: string) => fetchWithAuth(`/v1/budget/usage?companyId=${companyId}`),
 }

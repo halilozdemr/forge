@@ -1,14 +1,18 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useContext } from 'react';
 import { api } from '../api';
 import { Circle, CheckCircle2, CircleDashed } from 'lucide-react';
+import { CompanyContext } from '../App';
 
 export default function IssuesPage() {
+  const { companyId } = useContext(CompanyContext);
   const [issues, setIssues] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api.getIssues().then(res => { setIssues(res.issues); setLoading(false); }).catch(() => setLoading(false));
-  }, []);
+    if (companyId) {
+      api.getIssues(companyId).then(res => { setIssues(res.issues); setLoading(false); }).catch(() => setLoading(false));
+    }
+  }, [companyId]);
 
   const getStatusIcon = (status: string) => {
     switch (status) {

@@ -12,6 +12,8 @@ import { heartbeatCommand } from "./commands/heartbeat.js";
 import { companyCommand } from "./commands/company.js";
 import { loginCommand } from "./commands/login.js";
 import { logoutCommand } from "./commands/logout.js";
+import { queueCommand } from "./commands/queue.js";
+import { goalCommand } from "./commands/goal.js";
 
 const program = new Command("forge");
 
@@ -32,5 +34,7 @@ program.addCommand(heartbeatCommand());
 program.addCommand(companyCommand());
 program.addCommand(loginCommand());
 program.addCommand(logoutCommand());
+program.addCommand(queueCommand());
+program.addCommand(goalCommand());
 
 program.parse(process.argv);

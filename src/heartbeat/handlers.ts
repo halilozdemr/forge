@@ -10,7 +10,7 @@ interface HeartbeatContext {
   companyId: string;
 }
 
-export async function runHeartbeatForAgent(ctx: HeartbeatContext): Promise<void> {
+export async function runHeartbeatForAgent(ctx: HeartbeatContext): Promise<string> {
   const { agentSlug, companyId } = ctx;
   const db = getDb();
 
@@ -54,6 +54,8 @@ export async function runHeartbeatForAgent(ctx: HeartbeatContext): Promise<void>
     });
     addSyncEvent('heartbeat.completed', { companyId, agentSlug, result: error, status: "failed" });
   }
+
+  return run.id;
 }
 
 /**

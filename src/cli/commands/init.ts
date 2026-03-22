@@ -152,6 +152,20 @@ async function runInit(): Promise<void> {
       await writeFile(gitignorePath, gitignoreEntry.trim() + "\n");
     }
 
+    // 7. Sync with server if running
+    try {
+      const res = await fetch(`http://localhost:${forgeConfig.version ? config.port : 3131}/v1/init`, {
+        method: "POST",
+      });
+      if (res.ok) {
+        p.log.success(`Database seeded and server synchronized.`);
+      } else {
+        p.log.warn(`Server init failed. Run forge start to apply changes.`);
+      }
+    } catch {
+      p.log.warn(`Forge server not running. Run \x1b[1mnpx forge start\x1b[0m to apply changes to database.`);
+    }
+
     s.stop("Forge initialized.");
 
     p.log.success(`Company "${companyName}" configured`);

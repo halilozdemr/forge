@@ -12,6 +12,7 @@ export interface AgentJobData {
   systemPrompt: string;
   input: string;
   permissions: Record<string, boolean>;
+  adapterConfig?: Record<string, any>;
   projectPath: string;
   issueId?: string;
   timeoutMs?: number;
@@ -72,6 +73,21 @@ export async function enqueueAgentJob(opts: {
   nextAction?: { agentSlug: string; input: string };
 }): Promise<string> {
   const db = getDb();
+
+  if (opts.issueId) {
+    const lockResult = await db.issue.updateMany({
+      where: { id: opts.issueId, executionLockedAt: null },
+      data: {
+        executionLockedAt: new Date(),
+        executionAgentSlug: opts.agentSlug,
+      },
+    });
+
+    if (lockResult.count === 0) {
+      throw new Error(`Issue ${opts.issueId} is already being executed.`);
+    }
+  }
+
   const agent = await db.agent.findFirst({
     where: { id: opts.agentId },
   });
@@ -80,23 +96,44 @@ export async function enqueueAgentJob(opts: {
   const registry = new AgentRegistry(db);
   const systemPrompt = await registry.resolvePrompt(agent);
 
+  let goalContext = "";
+  if (opts.issueId) {
+    const issue = await db.issue.findUnique({ where: { id: opts.issueId } });
+    if (issue?.goalId) {
+      const { buildGoalChainContext } = await import("../utils/goal.js");
+      goalContext = await buildGoalChainContext(db, issue.goalId);
+    }
+  }
+
+  const finalInput = goalContext ? `${goalContext}\n${opts.input}` : opts.input;
+
   const payload: AgentJobData = {
     companyId: opts.companyId,
     agentSlug: opts.agentSlug,
     agentModel: agent.model,
     modelProvider: agent.modelProvider,
     systemPrompt,
-    input: opts.input,
+    input: finalInput,
     permissions: JSON.parse(agent.permissions) as Record<string, boolean>,
+    adapterConfig: JSON.parse(agent.adapterConfig || "{}"),
     projectPath: process.cwd(),
     issueId: opts.issueId,
     nextAction: opts.nextAction,
   };
 
-  return await addJob({
+  const jobId = await addJob({
     companyId: opts.companyId,
     agentSlug: opts.agentSlug,
     issueId: opts.issueId,
     payload: payload as any,
   });
+
+  if (opts.issueId) {
+    await db.issue.update({
+      where: { id: opts.issueId },
+      data: { executionJobId: jobId },
+    });
+  }
+
+  return jobId;
 }

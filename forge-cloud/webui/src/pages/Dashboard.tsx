@@ -1,16 +1,20 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useContext } from 'react';
 import { api } from '../api';
 import { Users, CheckSquare, RefreshCw, DollarSign, Activity } from 'lucide-react';
+import { CompanyContext } from '../App';
 
 export default function DashboardPage() {
+  const { companyId } = useContext(CompanyContext);
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api.getSummary()
-       .then(res => { setData(res); setLoading(false); })
-       .catch(err => { console.error(err); setLoading(false); });
-  }, []);
+    if (companyId) {
+      api.getSummary(companyId)
+         .then(res => { setData(res); setLoading(false); })
+         .catch(err => { console.error(err); setLoading(false); });
+    }
+  }, [companyId]);
 
   if (loading) return <div className="animate-pulse flex space-x-4"><div className="flex-1 space-y-6 py-1"><div className="h-2 bg-slate-700 rounded"></div><div className="space-y-3"><div className="grid grid-cols-3 gap-4"><div className="h-2 bg-slate-700 rounded col-span-1"></div></div></div></div></div>;
   if (!data) return <div className="text-red-400">Failed to load payload</div>;

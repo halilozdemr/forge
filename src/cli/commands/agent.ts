@@ -1,6 +1,7 @@
 import { Command } from "commander";
 import { loadConfig } from "../../utils/config.js";
 import { buildHierarchy, formatHierarchy } from "../../agents/hierarchy.js";
+import { resolveCompany } from "../../utils/company.js";
 
 function baseUrl(): string {
   return `http://localhost:${loadConfig().port}`;
@@ -27,7 +28,8 @@ export function agentCommand(): Command {
     .description("List all agents")
     .option("--company <id>", "Company ID")
     .action(async (opts) => {
-      const params = opts.company ? `?companyId=${opts.company}` : "";
+      const companyId = await resolveCompany(opts.company);
+      const params = `?companyId=${companyId}`;
       const { agents } = await api<{ agents: any[] }>(`/v1/agents${params}`);
       if (!agents.length) {
         console.log("No agents found.");
@@ -49,7 +51,8 @@ export function agentCommand(): Command {
     .description("Show agent details")
     .option("--company <id>", "Company ID")
     .action(async (slug, opts) => {
-      const params = opts.company ? `?companyId=${opts.company}` : "";
+      const companyId = await resolveCompany(opts.company);
+      const params = `?companyId=${companyId}`;
       const { agent, escalationChain } = await api<{ agent: any; escalationChain: string[] }>(
         `/v1/agents/${slug}${params}`
       );
@@ -67,33 +70,211 @@ export function agentCommand(): Command {
     });
 
   cmd
-    .command("hire <slug>")
+    .command("hire [slug]")
     .description("Hire a new agent")
-    .requiredOption("--company <id>", "Company ID")
-    .requiredOption("--name <name>", "Display name")
-    .option("--model <model>", "Model", "sonnet")
-    .option("--provider <p>", "Model provider (claude-cli|openrouter|anthropic-api)", "claude-cli")
+    .option("--company <id>", "Company ID")
+    .option("--name <name>", "Display name")
+    .option("--role <role>", "Role")
+    .option("--model <model>", "Model")
+    .option("--provider <p>", "Model provider")
     .option("--reports-to <slug>", "Parent agent slug")
-    .action(async (slug, opts) => {
+    .option("--cron <expr>", "Heartbeat cron")
+    .action(async (slugArg, opts) => {
+      const companyId = await resolveCompany(opts.company);
+      
+      let slug = slugArg;
+      let { name, role, model, provider, reportsTo, cron } = opts;
+
+      const isInteractive = !slug || !name || !role || !provider || !model;
+      
+      if (isInteractive) {
+        const { intro, text, select, p } = await import("../prompts.js");
+        intro("Hire a New Agent");
+        
+        if (!slug) {
+          slug = await text({
+            message: "Agent slug (e.g. frontend_dev):",
+            validate: (v) => (!v ? "Slug is required" : undefined)
+          });
+        }
+        
+        if (!name) {
+          name = await text({
+            message: "Display name:",
+            defaultValue: slug,
+          });
+        }
+
+        if (!role) {
+          role = await select({
+            message: "Role:",
+            options: [
+              { value: "engineer", label: "Engineer" },
+              { value: "designer", label: "Designer" },
+              { value: "pm", label: "Product Manager" },
+              { value: "qa", label: "QA" },
+              { value: "devops", label: "DevOps" },
+              { value: "researcher", label: "Researcher" },
+              { value: "general", label: "General" }
+            ]
+          });
+        }
+
+        if (!provider) {
+          provider = await select({
+            message: "Model Provider:",
+            options: [
+              { value: "claude-cli", label: "Claude CLI" },
+              { value: "anthropic-api", label: "Anthropic API" },
+              { value: "openrouter", label: "OpenRouter" },
+              { value: "gemini-cli", label: "Gemini CLI" },
+              { value: "codex-cli", label: "Codex CLI" }
+            ]
+          });
+        }
+
+        if (!model) {
+          model = await text({
+            message: `Model for ${provider}:`,
+            defaultValue: provider.includes("claude") || provider.includes("anthropic") ? "sonnet" : "default"
+          });
+        }
+        
+        if (!reportsTo) {
+          const { agents } = await api<{ agents: any[] }>(`/v1/agents?companyId=${companyId}`);
+          if (agents.length > 0) {
+            const reportOptions = [{ value: "none", label: "None (Top Level)" }];
+            for (const a of agents) {
+              reportOptions.push({ value: a.slug, label: `${a.name} (@${a.slug})` });
+            }
+            const rep = await select({
+              message: "Reports to:",
+              options: reportOptions
+            });
+            reportsTo = rep === "none" ? undefined : rep;
+          }
+        }
+        
+        if (!cron) {
+          const addCron = await p.confirm({ message: "Configure heartbeat cron?" });
+          if (!p.isCancel(addCron) && addCron) {
+            cron = await text({
+              message: "Cron expression (e.g. 0 */6 * * *):",
+            });
+          }
+        }
+      }
+
+      if (!slug || !name || !role || !provider || !model) {
+        throw new Error("Missing required arguments.");
+      }
+
       const { agent } = await api<{ agent: any }>("/v1/agents", "POST", {
-        companyId: opts.company,
+        companyId,
         slug,
-        name: opts.name,
-        role: opts.name,
-        model: opts.model,
-        modelProvider: opts.provider,
-        reportsTo: opts.reportsTo,
+        name,
+        role,
+        model,
+        modelProvider: provider,
+        reportsTo,
+        heartbeatCron: cron,
       });
-      console.log(`Agent "${agent.slug}" hired (${agent.status}).`);
+      
+      console.log();
+      console.log(`Agent "\x1b[1m${agent.slug}\x1b[0m" hired successfully (${agent.status}).`);
     });
 
   cmd
     .command("fire <slug>")
     .description("Terminate an agent")
-    .requiredOption("--company <id>", "Company ID")
+    .option("--company <id>", "Company ID")
     .action(async (slug, opts) => {
-      const { message } = await api<{ message: string }>(`/v1/agents/${slug}?companyId=${opts.company}`, "DELETE");
+      const companyId = await resolveCompany(opts.company);
+      const { message } = await api<{ message: string }>(`/v1/agents/${slug}?companyId=${companyId}`, "DELETE");
       console.log(message);
+    });
+
+  cmd
+    .command("run <slug>")
+    .description("Execute an agent directly and stream output")
+    .option("--company <id>", "Company ID")
+    .option("--input <input>", "Direct input prompt")
+    .option("--issue <issueId>", "Issue ID to work on")
+    .action(async (slug, opts) => {
+      const companyId = await resolveCompany(opts.company);
+      if (!opts.input && !opts.issue) {
+        throw new Error("Must provide either --input or --issue");
+      }
+
+      const { getDb } = await import("../../db/client.js");
+      const db = getDb();
+      
+      const agent = await db.agent.findUnique({ where: { companyId_slug: { companyId, slug } } });
+      if (!agent) throw new Error(`Agent ${slug} not found`);
+
+      const { AgentRegistry } = await import("../../agents/registry.js");
+      const registry = new AgentRegistry(db);
+      const systemPrompt = await registry.resolvePrompt(agent);
+
+      const config = loadConfig();
+
+      let inputStr = opts.input || "";
+      let lockedIssueId: string | null = null;
+      let goalContext = "";
+
+      if (opts.issue) {
+         const issue = await db.issue.findUnique({ where: { id: opts.issue } });
+         if (!issue) throw new Error(`Issue ${opts.issue} not found`);
+
+         const lockResult = await db.issue.updateMany({
+           where: { id: opts.issue, executionLockedAt: null },
+           data: { executionLockedAt: new Date(), executionAgentSlug: slug }
+         });
+         if (lockResult.count === 0) {
+           throw new Error(`Issue ${opts.issue} is already being executed.`);
+         }
+         lockedIssueId = opts.issue;
+
+         if (issue.goalId) {
+           const { buildGoalChainContext } = await import("../../utils/goal.js");
+           goalContext = await buildGoalChainContext(db, issue.goalId);
+         }
+
+         const issueContext = `Execute issue: ${issue.title}\n\n${issue.description ?? ""}`;
+         inputStr = goalContext 
+           ? `${goalContext}\n${issueContext}\n\n${inputStr}`
+           : `${issueContext}\n\n${inputStr}`;
+      }
+
+      console.log(`\n\x1b[1m🚀 Starting direct execution for @${slug}\x1b[0m\n`);
+
+      const { createRunner } = await import("../../bridge/runners/factory.js");
+      const runner = createRunner(agent.modelProvider);
+      
+      try {
+        const result = await runner.run({
+          projectPath: config.projectPath,
+          agentSlug: slug,
+          model: agent.model,
+          systemPrompt,
+          input: inputStr,
+          permissions: JSON.parse(agent.permissions),
+          adapterConfig: JSON.parse(agent.adapterConfig || "{}"),
+          onStream: (chunk) => process.stdout.write(chunk),
+        });
+
+        console.log(`\n\n\x1b[1m✨ Execution complete (${result.durationMs}ms)\x1b[0m`);
+        if (!result.success) {
+          console.error(`\x1b[31mError: ${result.error}\x1b[0m`);
+        }
+      } finally {
+        if (lockedIssueId) {
+          await db.issue.update({
+            where: { id: lockedIssueId },
+            data: { executionLockedAt: null, executionAgentSlug: null, executionJobId: null }
+          });
+        }
+      }
     });
 
   return cmd;

@@ -60,7 +60,7 @@ async function processJob(job: any): Promise<void> {
   const db = getDb();
   const budgetGate = new BudgetGate(db);
   const data: AgentJobData = JSON.parse(job.payload);
-  const { companyId, agentSlug, modelProvider, agentModel, systemPrompt, input, permissions, projectPath, issueId, timeoutMs } = data;
+  const { companyId, agentSlug, modelProvider, agentModel, systemPrompt, input, permissions, adapterConfig, projectPath, issueId, timeoutMs } = data;
 
   log.info({ jobId: job.id, agent: agentSlug }, "Processing job");
 
@@ -95,6 +95,7 @@ async function processJob(job: any): Promise<void> {
       systemPrompt,
       input,
       permissions,
+      adapterConfig,
       timeoutMs,
     });
 
@@ -137,6 +138,9 @@ async function processJob(job: any): Promise<void> {
         data: {
           status: finalStatus,
           result: result.output || result.error || null,
+          executionLockedAt: null,
+          executionAgentSlug: null,
+          executionJobId: null,
         },
       });
       addSyncEvent('issue.updated', { issueId, status: finalStatus, companyId });
@@ -204,6 +208,18 @@ async function processJob(job: any): Promise<void> {
         scheduledAt: isRetryable ? new Date(Date.now() + Math.pow(2, job.attempts) * 1000) : job.scheduledAt,
       }
     });
+
+    if (!isRetryable && issueId) {
+      await db.issue.update({
+        where: { id: issueId },
+        data: {
+          status: "failed",
+          executionLockedAt: null,
+          executionAgentSlug: null,
+          executionJobId: null,
+        }
+      });
+    }
   }
 }
 

@@ -1,5 +1,6 @@
 import { Command } from "commander";
 import { loadConfig } from "../../utils/config.js";
+import { resolveCompany } from "../../utils/company.js";
 
 function baseUrl(): string {
   return `http://localhost:${loadConfig().port}`;
@@ -24,9 +25,10 @@ export function heartbeatCommand(): Command {
   cmd
     .command("list")
     .description("List all agent heartbeat schedules")
-    .requiredOption("--company <id>", "Company ID")
+    .option("--company <id>", "Company ID")
     .action(async (opts) => {
-      const { agents } = await api<{ agents: any[] }>(`/v1/agents?companyId=${opts.company}`);
+      const companyId = await resolveCompany(opts.company);
+      const { agents } = await api<{ agents: any[] }>(`/v1/agents?companyId=${companyId}`);
       const scheduled = agents.filter((a) => a.heartbeatCron);
 
       console.log("\nHeartbeat Schedules\n" + "─".repeat(60));
@@ -43,11 +45,12 @@ export function heartbeatCommand(): Command {
   cmd
     .command("enable <slug>")
     .description("Enable heartbeat for an agent")
-    .requiredOption("--company <id>", "Company ID")
+    .option("--company <id>", "Company ID")
     .requiredOption("--cron <expr>", 'Cron expression (e.g. "0 */6 * * *")')
     .action(async (slug, opts) => {
+      const companyId = await resolveCompany(opts.company);
       await api(`/v1/agents/${slug}`, "PUT", {
-        companyId: opts.company,
+        companyId,
         heartbeatCron: opts.cron,
       });
       console.log(`Heartbeat enabled for ${slug}: ${opts.cron}`);
@@ -56,10 +59,11 @@ export function heartbeatCommand(): Command {
   cmd
     .command("disable <slug>")
     .description("Disable heartbeat for an agent")
-    .requiredOption("--company <id>", "Company ID")
+    .option("--company <id>", "Company ID")
     .action(async (slug, opts) => {
+      const companyId = await resolveCompany(opts.company);
       await api(`/v1/agents/${slug}`, "PUT", {
-        companyId: opts.company,
+        companyId,
         heartbeatCron: null,
       });
       console.log(`Heartbeat disabled for ${slug}.`);
@@ -67,23 +71,38 @@ export function heartbeatCommand(): Command {
 
   cmd
     .command("run <slug>")
-    .description("Manually trigger a heartbeat for an agent")
-    .requiredOption("--company <id>", "Company ID")
+    .description("Manually trigger a heartbeat for an agent with live log")
+    .option("--company <id>", "Company ID")
     .action(async (slug, opts) => {
-      const { run } = await api<{ run: any }>("/v1/heartbeat/trigger", "POST", {
-        agentSlug: slug,
-        companyId: opts.company,
-      });
-      console.log(`Heartbeat triggered for ${slug} (run id: ${run.id})`);
+      const companyId = await resolveCompany(opts.company);
+      
+      console.log(`\n\x1b[1m💓 Running heartbeat for @${slug}...\x1b[0m\n`);
+
+      const { getDb } = await import("../../db/client.js");
+      const db = getDb();
+
+      // We run the handler logic locally
+      const { runHeartbeatForAgent } = await import("../../heartbeat/handlers.js");
+      const runId = await runHeartbeatForAgent({ agentSlug: slug, companyId });
+
+      const run = await db.heartbeatRun.findUnique({ where: { id: runId } });
+      
+      if (run?.status === "completed") {
+        console.log(`\x1b[32m✔ Completed:\x1b[0m ${run.result}`);
+      } else {
+        console.log(`\x1b[31m✖ Failed:\x1b[0m ${run?.result || "Unknown error"}`);
+      }
+      console.log();
     });
 
   cmd
     .command("runs")
     .description("Show recent heartbeat run history")
-    .requiredOption("--company <id>", "Company ID")
+    .option("--company <id>", "Company ID")
     .option("--agent <slug>", "Filter by agent slug")
     .action(async (opts) => {
-      const params = new URLSearchParams({ companyId: opts.company });
+      const companyId = await resolveCompany(opts.company);
+      const params = new URLSearchParams({ companyId });
       if (opts.agent) params.set("agentSlug", opts.agent);
       const { runs } = await api<{ runs: any[] }>(`/v1/heartbeat/runs?${params}`);
 

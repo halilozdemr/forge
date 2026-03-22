@@ -1,14 +1,18 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useContext } from 'react';
 import { api } from '../api';
 import { Settings } from 'lucide-react';
+import { CompanyContext } from '../App';
 
 export default function AgentsPage() {
+  const { companyId } = useContext(CompanyContext);
   const [agents, setAgents] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api.getAgents().then(res => { setAgents(res.agents); setLoading(false); }).catch(() => setLoading(false));
-  }, []);
+    if (companyId) {
+      api.getAgents(companyId).then(res => { setAgents(res.agents); setLoading(false); }).catch(() => setLoading(false));
+    }
+  }, [companyId]);
 
   if (loading) return <div className="animate-pulse h-32 bg-slate-800 rounded-xl"></div>;
 

@@ -14,6 +14,8 @@ import { sprintRoutes } from "./routes/sprints.js";
 import { queueRoutes } from "./routes/queue.js";
 import { budgetRoutes } from "./routes/budget.js";
 import { companyRoutes } from "./routes/companies.js";
+import { initRoutes } from "./routes/init.js";
+import { statusRoutes } from "./routes/status.js";
 
 const log = createChildLogger("server");
 
@@ -34,6 +36,8 @@ export async function createServer(port = 3131, host = "0.0.0.0") {
   await server.register(queueRoutes, { prefix: "/v1" });
   await server.register(budgetRoutes, { prefix: "/v1" });
   await server.register(companyRoutes, { prefix: "/v1" });
+  await server.register(initRoutes, { prefix: "/v1" });
+  await server.register(statusRoutes, { prefix: "/v1" });
 
   const __filename = fileURLToPath(import.meta.url);
   const __dirname = path.dirname(__filename);

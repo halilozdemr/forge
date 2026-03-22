@@ -1,5 +1,11 @@
 import { PrismaClient } from "@prisma/client";
 import { createChildLogger } from "../utils/logger.js";
+import { join, dirname } from "path";
+import { fileURLToPath } from "url";
+import { existsSync } from "fs";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 const log = createChildLogger("seed");
 
@@ -138,11 +144,16 @@ export async function seedDatabase(db: PrismaClient, options: SeedOptions): Prom
   // Create default agents
   let agentCount = 0;
   for (const agentDef of DEFAULT_AGENTS) {
+    const promptPath = join(__dirname, "..", "agents", "defaults", `${agentDef.slug}.md`);
+    const promptFile = existsSync(promptPath) ? promptPath : null;
+
     await db.agent.upsert({
       where: {
         companyId_slug: { companyId: company.id, slug: agentDef.slug },
       },
-      update: {},
+      update: {
+        promptFile,
+      },
       create: {
         companyId: company.id,
         slug: agentDef.slug,
@@ -154,6 +165,7 @@ export async function seedDatabase(db: PrismaClient, options: SeedOptions): Prom
         status: "idle",
         permissions: JSON.stringify(agentDef.permissions),
         heartbeatCron: agentDef.heartbeatCron,
+        promptFile,
       },
     });
     agentCount++;

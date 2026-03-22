@@ -74,8 +74,8 @@ export class ClaudeCliRunner implements AgentRunner {
         }, timeoutMs);
 
         Promise.all([
-          collectStream(proc.stdout!),
-          collectStream(proc.stderr!),
+          collectStream(proc.stdout!, config.onStream),
+          collectStream(proc.stderr!, config.onStream ? (c) => config.onStream!(`\x1b[31m${c}\x1b[0m`) : undefined),
         ]).then(([stdout, stderr]) => {
           return new Promise<void>((res) => proc.on("close", () => res())).then(() => {
             clearTimeout(timer);

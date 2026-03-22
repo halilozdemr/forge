@@ -27,6 +27,7 @@ model Company {
   queueJobs      QueueJob[]
   heartbeatRuns  HeartbeatRun[]
   scheduledJobs  ScheduledJob[]
+  goals          Goal[]
 
   @@map("companies")
 }
@@ -64,6 +65,7 @@ model Agent {
   reportsTo     String?
   status        String  @default("idle")
   permissions   String  @default("{}")
+  adapterConfig String  @default("{}")
   maxConcurrent Int     @default(1)
   heartbeatCron String?
   createdAt     DateTime @default(now())
@@ -105,8 +107,12 @@ model Issue {
   priority        String  @default("normal")
   assignedAgentId String?
   parentIssueId   String?
+  goalId          String?
   result          String?
   metadata        String  @default("{}")
+  executionLockedAt DateTime?
+  executionAgentSlug String?
+  executionJobId     String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -114,6 +120,7 @@ model Issue {
   sprint        Sprint?  @relation(fields: [sprintId], references: [id])
   assignedAgent Agent?   @relation("AssignedAgent", fields: [assignedAgentId], references: [id])
   parentIssue   Issue?   @relation("SubIssues", fields: [parentIssueId], references: [id])
+  goal          Goal?    @relation(fields: [goalId], references: [id])
   subIssues     Issue[]  @relation("SubIssues")
 
   skillExecutions SkillExecution[]
@@ -338,4 +345,26 @@ model SyncOutbox {
 
   @@index([status, createdAt])
   @@map("sync_outbox")
+}
+
+// 18. Goals
+model Goal {
+  id             String  @id @default(cuid())
+  companyId      String
+  title          String
+  description    String?
+  level          String  @default("task")   // company | team | agent | task
+  status         String  @default("active") // active | completed | frozen
+  parentId       String?
+  ownerAgentSlug String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  company      Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  parent       Goal?   @relation("GoalHierarchy", fields: [parentId], references: [id])
+  children     Goal[]  @relation("GoalHierarchy")
+  linkedIssues Issue[]
+
+  @@index([companyId, level])
+  @@map("goals")
 }

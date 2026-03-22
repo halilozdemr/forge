@@ -1,14 +1,18 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useContext } from 'react';
 import { api } from '../api';
 import { RefreshCw, Calendar, Target } from 'lucide-react';
+import { CompanyContext } from '../App';
 
 export default function SprintsPage() {
+  const { companyId } = useContext(CompanyContext);
   const [sprints, setSprints] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api.getSprints().then(res => { setSprints(res.sprints); setLoading(false); }).catch(() => setLoading(false));
-  }, []);
+    if (companyId) {
+      api.getSprints(companyId).then(res => { setSprints(res.sprints); setLoading(false); }).catch(() => setLoading(false));
+    }
+  }, [companyId]);
 
   if (loading) return <div className="animate-pulse h-64 bg-slate-800 rounded-xl"></div>;
 

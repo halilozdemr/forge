@@ -1,6 +1,9 @@
 import { BrowserRouter, Routes, Route, Navigate, Link, useLocation } from 'react-router-dom';
 import { LayoutDashboard, Users, CheckSquare, RefreshCw, DollarSign, LogOut } from 'lucide-react';
-import React from 'react';
+import React, { createContext, useState, useEffect } from 'react';
+import { api } from './api';
+
+export const CompanyContext = createContext<{ companyId: string | null }>({ companyId: null });
 
 // Pages
 import LoginPage from './pages/Login';
@@ -64,8 +67,37 @@ const SidebarLayout = ({ children }: { children: React.ReactNode }) => {
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const hasToken = !!localStorage.getItem('forge_cloud_token');
+  const [companyId, setCompanyId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (hasToken) {
+      api.getCompanies()
+        .then(res => {
+          if (res.companies && res.companies.length > 0) {
+            setCompanyId(res.companies[0].id);
+          }
+          setLoading(false);
+        })
+        .catch(() => setLoading(false));
+    }
+  }, [hasToken]);
+
   if (!hasToken) return <Navigate to="/login" replace />;
-  return <SidebarLayout>{children}</SidebarLayout>;
+  
+  if (loading) {
+    return <div className="h-screen bg-slate-900 flex items-center justify-center text-slate-400">Loading company...</div>;
+  }
+
+  if (!companyId) {
+    return <div className="h-screen bg-slate-900 flex items-center justify-center text-slate-400">No company found. Please run forge init.</div>;
+  }
+
+  return (
+    <CompanyContext.Provider value={{ companyId }}>
+      <SidebarLayout>{children}</SidebarLayout>
+    </CompanyContext.Provider>
+  );
 };
 
 function App() {
