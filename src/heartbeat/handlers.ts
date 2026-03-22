@@ -2,6 +2,8 @@ import { createChildLogger } from "../utils/logger.js";
 import { getDb } from "../db/client.js";
 import { enqueueAgentJob } from "../bridge/queue.js";
 import { addSyncEvent } from "../sync/worker.js";
+import { emit } from "../events/emitter.js";
+
 
 const log = createChildLogger("heartbeat:handlers");
 
@@ -113,6 +115,7 @@ async function handleScrumMasterHeartbeat(companyId: string): Promise<string> {
   if (staleIssues.length > 0) {
     actions.push(`found ${staleIssues.length} stale in_progress issues`);
     log.warn({ companyId, count: staleIssues.length }, "Stale issues detected by scrum-master heartbeat");
+    emit({ type: "heartbeat.log", agentSlug: "scrum-master", line: `Found ${staleIssues.length} stale issues.` });
   }
 
   return actions.length > 0 ? actions.join("; ") : "no action needed";
@@ -136,6 +139,7 @@ async function handleCeoHeartbeat(companyId: string): Promise<string> {
   if (unassignedOpen > 0) {
     actions.push(`${unassignedOpen} unassigned open issues`);
     log.warn({ companyId, unassignedOpen }, "CEO heartbeat: unassigned open issues");
+    emit({ type: "heartbeat.log", agentSlug: "ceo", line: `Found ${unassignedOpen} unassigned open issues.` });
   }
 
   const escalatedIssues = await db.issue.count({
@@ -165,6 +169,7 @@ async function handlePmHeartbeat(companyId: string): Promise<string> {
 
   if (backlogCount > 0) {
     log.info({ companyId, backlogCount }, "PM heartbeat: backlog items pending sprint assignment");
+    emit({ type: "heartbeat.log", agentSlug: "pm", line: `Found ${backlogCount} backlog items pending sprint assignment.` });
     return `${backlogCount} backlog items not in any sprint`;
   }
 

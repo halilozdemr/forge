@@ -2,9 +2,11 @@ import Fastify from "fastify";
 import { existsSync } from "fs";
 import cors from "@fastify/cors";
 import fastifyStatic from "@fastify/static";
+import fastifyWebsocket from "@fastify/websocket";
 import path from "path";
 import { fileURLToPath } from "url";
 import { createChildLogger } from "../utils/logger.js";
+import { registerClient, unregisterClient } from "../events/emitter.js";
 import { healthRoutes } from "./routes/health.js";
 import { completionsRoutes } from "./routes/completions.js";
 import { bridgeRoutes } from "./routes/bridge.js";
@@ -19,6 +21,9 @@ import { statusRoutes } from "./routes/status.js";
 import { secretRoutes } from "./routes/secrets.js";
 import { approvalRoutes } from "./routes/approvals.js";
 import { labelRoutes } from "./routes/labels.js";
+import { eventRoutes } from "./routes/events.js";
+import { exportRoutes } from "./routes/export.js";
+
 
 const log = createChildLogger("server");
 
@@ -28,6 +33,23 @@ export async function createServer(port = 3131, host = "0.0.0.0") {
   });
 
   await server.register(cors, { origin: true });
+  await server.register(fastifyWebsocket);
+
+  // WebSocket endpoint
+  server.get("/ws", { websocket: true }, (socket, req) => {
+    log.info("New WebSocket client connected");
+    registerClient(socket);
+
+    socket.on("close", () => {
+      log.info("WebSocket client disconnected");
+      unregisterClient(socket);
+    });
+
+    socket.on("error", (err: Error) => {
+      log.error({ err: err.message }, "WebSocket error");
+      unregisterClient(socket);
+    });
+  });
 
   // Register routes
   await server.register(healthRoutes);
@@ -44,6 +66,9 @@ export async function createServer(port = 3131, host = "0.0.0.0") {
   await server.register(secretRoutes, { prefix: "/v1" });
   await server.register(approvalRoutes, { prefix: "/v1" });
   await server.register(labelRoutes, { prefix: "/v1" });
+  await server.register(eventRoutes, { prefix: "/v1" });
+  await server.register(exportRoutes, { prefix: "/v1" });
+
 
   const __filename = fileURLToPath(import.meta.url);
   const __dirname = path.dirname(__filename);
@@ -65,7 +90,7 @@ export async function createServer(port = 3131, host = "0.0.0.0") {
   // SPA fallback for hash-based router (optional but good practice)
   // Even though it's hash-based, we want to serve index.html for unknown routes
   server.setNotFoundHandler((request, reply) => {
-    if (request.url.startsWith("/v1") || request.url === "/health") {
+    if (request.url.startsWith("/v1") || request.url === "/health" || request.url === "/ws") {
       reply.code(404).send({ error: "Not Found" });
       return;
     }

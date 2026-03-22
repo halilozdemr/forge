@@ -1,5 +1,7 @@
 import { PrismaClient, Prisma } from "@prisma/client";
 import { createChildLogger } from "../utils/logger.js";
+import { emit } from "../events/emitter.js";
+
 
 const log = createChildLogger("budget-gate");
 
@@ -70,6 +72,8 @@ export class BudgetGate {
     // Hard limit check
     if (percentUsed >= policy.hardLimitPct) {
       log.warn({ companyId, agentSlug, percentUsed, limitUsd }, "Budget hard limit reached — BLOCKED");
+      emit({ type: "budget.threshold", scope: policy.scope, percent: percentUsed });
+
 
       // Create approval if it's an agent-specific check
       if (agentSlug) {

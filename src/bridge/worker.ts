@@ -7,6 +7,8 @@ import { addSyncEvent } from "../sync/worker.js";
 import { resolveWorkspace, cleanWorkspace } from "./workspace.js";
 import { updateSessionUsage, shouldRotate, rotateSession } from "./session.js";
 import { decrypt, redactSecrets } from "../utils/crypto.js";
+import { emit } from "../events/emitter.js";
+
 
 const log = createChildLogger("worker");
 
@@ -86,6 +88,8 @@ async function processJob(job: any): Promise<void> {
   }
 
   log.info({ jobId: job.id, agent: agentSlug }, "Processing job");
+  emit({ type: "queue.job.started", jobId: job.id, agentSlug });
+
 
   try {
     const budgetCheck = await budgetGate.check(companyId, agentSlug);
@@ -285,6 +289,8 @@ async function processJob(job: any): Promise<void> {
     }
     
     log.info({ jobId: job.id, agent: agentSlug }, "Job completed");
+    emit({ type: "queue.job.completed", jobId: job.id, success: true });
+
 
   } catch (err: any) {
     const redactedError = redactSecrets(err.message, secrets);
@@ -298,6 +304,9 @@ async function processJob(job: any): Promise<void> {
         scheduledAt: isRetryable ? new Date(Date.now() + Math.pow(2, job.attempts) * 1000) : job.scheduledAt,
       }
     });
+
+    emit({ type: "queue.job.completed", jobId: job.id, success: false });
+
 
     if (!isRetryable && issueId) {
       await db.issue.update({

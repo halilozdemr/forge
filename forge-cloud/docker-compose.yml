@@ -9,6 +9,11 @@ services:
       - "5434:5432"         # 5433 Forge v3 dev'de kullanılıyor, çakışmasın
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U forge_cloud -d forge_cloud"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   forge-cloud:
     build: .

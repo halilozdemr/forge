@@ -11,9 +11,12 @@ import { SprintsPage } from './components/pages/sprints';
 import { QueuePage } from './components/pages/queue';
 import { BudgetPage } from './components/pages/budget';
 import { startHealthPolling } from './api/health';
+import { connectWebSocket } from './api/socket';
 
-// Start polling
+// Start polling & WS
 startHealthPolling();
+connectWebSocket();
+
 
 // Register routes
 router.addRoute('#/', () => Layout(OverviewPage()));

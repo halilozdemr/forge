@@ -34,7 +34,9 @@
     "@clack/prompts": "^0.10.0",
     "@fastify/cors": "^8.5.0",
     "@fastify/static": "^7.0.4",
+    "@fastify/websocket": "^8.3.1",
     "@prisma/client": "^5.7.1",
+    "adm-zip": "^0.5.16",
     "commander": "^13.1.0",
     "cron-parser": "^4.9.0",
     "crypto-random-string": "^5.0.0",
@@ -46,7 +48,9 @@
     "pino-pretty": "^10.3.1"
   },
   "devDependencies": {
+    "@types/adm-zip": "^0.5.8",
     "@types/node": "^20.11.0",
+    "@types/ws": "^8.18.1",
     "prisma": "^5.7.1",
     "tsx": "^4.7.0",
     "typescript": "^5.3.3",

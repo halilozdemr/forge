@@ -201,6 +201,7 @@ export function agentCommand(): Command {
     .option("--company <id>", "Company ID")
     .option("--input <input>", "Direct input prompt")
     .option("--issue <issueId>", "Issue ID to work on")
+    .option("--stream", "Stream live logs from the agent")
     .action(async (slug, opts) => {
       const companyId = await resolveCompany(opts.company);
       if (!opts.input && !opts.issue) {
@@ -236,9 +237,10 @@ export function agentCommand(): Command {
          }
          lockedIssueId = opts.issue;
 
-         if (issue.goalId) {
+         // Check if goalId exists in schema before using it
+         if ((issue as any).goalId) {
            const { buildGoalChainContext } = await import("../../utils/goal.js");
-           goalContext = await buildGoalChainContext(db, issue.goalId);
+           goalContext = await buildGoalChainContext(db, (issue as any).goalId);
          }
 
          const issueContext = `Execute issue: ${issue.title}\n\n${issue.description ?? ""}`;
@@ -279,11 +281,23 @@ export function agentCommand(): Command {
           systemPrompt: finalSystemPrompt,
           input: inputStr,
           permissions: JSON.parse(agent.permissions),
-          adapterConfig: JSON.parse(agent.adapterConfig || "{}"),
+          adapterConfig: JSON.parse((agent as any).adapterConfig || "{}"),
           env: secrets,
           onStream: (chunk) => {
             const redacted = redactSecrets(chunk, secrets);
             process.stdout.write(redacted);
+
+            if (opts.stream) {
+              // Emit to WebSocket via API
+              const eventLine = redacted.trim();
+              if (eventLine) {
+                api("/v1/events/emit", "POST", {
+                  type: "heartbeat.log",
+                  agentSlug: slug,
+                  line: eventLine
+                }).catch(() => {}); // fire and forget
+              }
+            }
           },
         });
 
