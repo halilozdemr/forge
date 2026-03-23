@@ -15,7 +15,12 @@ export class CodexCliRunner implements AgentRunner {
 
     return new Promise((resolve) => {
       try {
-        const args = ["--full-auto", "--quiet", config.input];
+        const args = [
+          ...(config.model ? ["--model", config.model] : []),
+          "--full-auto",
+          "--quiet",
+          config.input,
+        ];
         
         const proc = spawn("codex", args, {
           cwd: config.projectPath,

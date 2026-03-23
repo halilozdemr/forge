@@ -1,9 +1,9 @@
 import { Command } from "commander";
-import { existsSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import { mkdir, writeFile, copyFile } from "fs/promises";
 import { join, resolve, dirname } from "path";
 import { execSync } from "child_process";
-import os from "os";
+import os, { homedir } from "os";
 import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -87,6 +87,40 @@ function detectOpenCodeCli() {
     "/usr/local/bin/opencode",
     "/opt/homebrew/bin/opencode",
   ]);
+}
+
+function detectClaudeConfiguredModel(): string | null {
+  // Claude CLI has no `models` subcommand. Read configured model from settings if possible.
+  const candidates = [
+    join(homedir(), ".claude", "settings.json"),
+    join(homedir(), ".config", "claude", "settings.json"),
+  ];
+  for (const p of candidates) {
+    try {
+      if (!existsSync(p)) continue;
+      const data = JSON.parse(readFileSync(p, "utf-8")) as { model?: string };
+      if (data.model) return data.model;
+    } catch { /* ignore */ }
+  }
+  return null;
+}
+
+function detectCodexModels(): string[] | null {
+  // Read from ~/.codex/models_cache.json (Codex CLI caches available models here)
+  const cachePath = join(homedir(), ".codex", "models_cache.json");
+  try {
+    if (!existsSync(cachePath)) return null;
+    const data = JSON.parse(readFileSync(cachePath, "utf-8")) as {
+      models?: Array<{ slug: string; visibility?: string }>;
+    };
+    const models = (data.models ?? [])
+      .filter((m) => m.visibility !== "hidden")
+      .map((m) => m.slug)
+      .filter(Boolean);
+    return models.length > 0 ? models : null;
+  } catch {
+    return null;
+  }
 }
 
 async function probeOllama(baseUrl: string): Promise<{ running: boolean; models: string[] }> {
@@ -256,6 +290,10 @@ async function runInit(opts: { yes?: boolean }): Promise<void> {
   const defaultOllamaBaseUrl = process.env.OLLAMA_BASE_URL ?? "http://localhost:11434";
   const ollamaProbePromise = quickstart ? Promise.resolve({ running: false, models: [] as string[] }) : probeOllama(defaultOllamaBaseUrl);
 
+  // Detect configured models from CLI config files (sync reads)
+  const claudeConfiguredModel = hasClaude ? detectClaudeConfiguredModel() : null;
+  const codexDetectedModels   = hasCodex  ? detectCodexModels()           : null;
+
   // Pre-fetch models for keys already in env (quickstart gets dynamic models too)
   const envOpenRouterKey  = process.env.OPENROUTER_API_KEY ?? "";
   const envAnthropicKey   = process.env.ANTHROPIC_API_KEY  ?? "";
@@ -333,6 +371,10 @@ async function runInit(opts: { yes?: boolean }): Promise<void> {
 
   // Dynamic model registry — populated as keys are validated
   const fetchedModels = new Map<Provider, string[]>();
+
+  // Seed CLI detected models so buildModelOptions shows them
+  if (claudeConfiguredModel) fetchedModels.set("claude-cli", [claudeConfiguredModel]);
+  if (codexDetectedModels)   fetchedModels.set("codex-cli",  codexDetectedModels);
 
   // Apply any prefetched models from env keys
   const applyPrefetch = async (provider: Provider, promise: Promise<string[] | null>) => {
@@ -738,7 +780,14 @@ async function runInit(opts: { yes?: boolean }): Promise<void> {
       appendFileSync(envPath, "\n# Forge AI Provider Keys\n" + envLines.join("\n") + "\n");
     }
 
-    // 6. README.md
+    // 6. CLAUDE.md — Receptionist logic for Claude Code
+    const claudeMdSrc = join(__dirname, "..", "..", "..", "..", "..", "CLAUDE.md");
+    const claudeMdDest = join(absProjectPath, "CLAUDE.md");
+    if (existsSync(claudeMdSrc)) {
+      await copyFile(claudeMdSrc, claudeMdDest);
+    }
+
+    // 7. README.md
     const readmePath = join(absProjectPath, "README.md");
     if (!existsSync(readmePath)) {
       await writeFile(readmePath, renderReadme({ projectName, description, stack, date }));
@@ -895,17 +944,40 @@ function buildModelOptions(
 ): Array<{ value: string; label: string }> {
   const opts: Array<{ value: string; label: string }> = [];
 
-  // CLI providers — static curated lists
+  // CLI providers — dynamic if detected, fallback to curated list
   if (available.includes("claude-cli")) {
-    opts.push({ value: "claude-cli|sonnet", label: "Claude Code CLI — Sonnet" });
-    opts.push({ value: "claude-cli|opus",   label: "Claude Code CLI — Opus" });
+    // Use Anthropic API model list if available, else config-detected model, else hardcoded aliases
+    const anthropicModels = fetchedModels.get("anthropic-api");
+    const configModel     = fetchedModels.get("claude-cli")?.[0];
+    if (anthropicModels && anthropicModels.length > 0) {
+      for (const m of anthropicModels) {
+        opts.push({ value: `claude-cli|${m}`, label: `Claude Code CLI — ${m}` });
+      }
+    } else if (configModel) {
+      opts.push({ value: `claude-cli|${configModel}`, label: `Claude Code CLI — ${configModel} (from config)` });
+      opts.push({ value: "claude-cli|sonnet", label: "Claude Code CLI — sonnet" });
+      opts.push({ value: "claude-cli|opus",   label: "Claude Code CLI — opus" });
+    } else {
+      opts.push({ value: "claude-cli|sonnet", label: "Claude Code CLI — sonnet" });
+      opts.push({ value: "claude-cli|opus",   label: "Claude Code CLI — opus" });
+    }
   }
   if (available.includes("gemini-cli")) {
     opts.push({ value: "gemini-cli|gemini-2.5-pro",  label: "Gemini CLI — 2.5 Pro" });
     opts.push({ value: "gemini-cli|gemini-2.0-flash", label: "Gemini CLI — 2.0 Flash" });
   }
   if (available.includes("codex-cli")) {
-    opts.push({ value: "codex-cli|codex-mini-latest", label: "Codex CLI — codex-mini-latest" });
+    // models_cache.json → full list; else fallback
+    const dynamic = fetchedModels.get("codex-cli");
+    if (dynamic && dynamic.length > 0) {
+      for (const m of dynamic) {
+        opts.push({ value: `codex-cli|${m}`, label: `Codex CLI — ${m}` });
+      }
+    } else {
+      opts.push({ value: "codex-cli|o4-mini",           label: "Codex CLI — o4-mini (fallback)" });
+      opts.push({ value: "codex-cli|o3",                label: "Codex CLI — o3 (fallback)" });
+      opts.push({ value: "codex-cli|codex-mini-latest", label: "Codex CLI — codex-mini-latest (fallback)" });
+    }
   }
   if (available.includes("opencode-cli")) {
     opts.push({ value: "opencode-cli|default", label: "OpenCode CLI — default model" });
