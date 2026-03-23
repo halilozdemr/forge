@@ -8,7 +8,7 @@ import { loadConfig } from "../../utils/config.js";
 import { writePidFile, setupGracefulShutdown } from "../../utils/process.js";
 import { runMigrations } from "../../db/migrate.js";
 import { getDb, disconnectDb } from "../../db/client.js";
-import { seedDatabase } from "../../db/seed.js";
+import { seedDatabase, ProviderStrategy } from "../../db/seed.js";
 import { createServer } from "../../server/index.js";
 import { createAgentWorker, closeWorker } from "../../bridge/worker.js";
 import { getQueue, closeQueue } from "../../bridge/queue.js";
@@ -46,13 +46,21 @@ async function runStart(opts: {
 
   // 2. Seed default company/agents
   const forgeConfigPath = join(process.cwd(), ".forge", "config.json");
-  let seedOptions = {
+  let seedOptions: {
+    companyName: string;
+    companySlug: string;
+    projectName: string;
+    projectPath: string;
+    stack: string;
+    providerStrategy?: ProviderStrategy;
+  } = {
     companyName: "My Forge",
     companySlug: "my-forge",
     projectName: "default",
     projectPath: process.cwd(),
     stack: "other",
   };
+
   if (existsSync(forgeConfigPath)) {
     try {
       const forgeConfig = JSON.parse(readFileSync(forgeConfigPath, "utf-8"));
@@ -62,13 +70,22 @@ async function runStart(opts: {
         projectName: forgeConfig.project?.name ?? seedOptions.projectName,
         projectPath: forgeConfig.project?.path ?? seedOptions.projectPath,
         stack: forgeConfig.project?.stack ?? seedOptions.stack,
+        providerStrategy: forgeConfig.agentStrategy,
       };
+      // Load API keys from config into env if not already set
+      if (forgeConfig.providers?.openrouter?.apiKey && !process.env.OPENROUTER_API_KEY) {
+        process.env.OPENROUTER_API_KEY = forgeConfig.providers.openrouter.apiKey;
+      }
+      if (forgeConfig.providers?.anthropicApi?.apiKey && !process.env.ANTHROPIC_API_KEY) {
+        process.env.ANTHROPIC_API_KEY = forgeConfig.providers.anthropicApi.apiKey;
+      }
     } catch (err) {
       log.warn({ err }, "Failed to read .forge/config.json — using defaults");
     }
   } else {
     log.info("No .forge/config.json found — seeding with defaults. Run `forge init` for customization.");
   }
+
   try {
     const db = getDb();
     await seedDatabase(db, seedOptions);

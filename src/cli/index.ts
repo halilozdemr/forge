@@ -1,6 +1,7 @@
 import "dotenv/config";
 import { Command } from "commander";
 import { initCommand } from "./commands/init.js";
+import { doctorCommand } from "./commands/doctor.js";
 import { startCommand } from "./commands/start.js";
 import { stopCommand } from "./commands/stop.js";
 import { statusCommand } from "./commands/status.js";
@@ -28,6 +29,7 @@ program
   .version("3.0.0");
 
 program.addCommand(initCommand());
+program.addCommand(doctorCommand());
 program.addCommand(startCommand());
 program.addCommand(stopCommand());
 program.addCommand(statusCommand());

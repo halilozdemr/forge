@@ -50,9 +50,9 @@ export function CreateIssueModal(onClose: () => void) {
         </div>
         <div class="form-group">
           <label class="form-label">Assignee</label>
-          <select name="assignedTo">
+          <select name="assignedAgentId">
             <option value="">Unassigned</option>
-            ${agents.map(a => `<option value="${esc(a.slug)}">${esc(a.name)} (${esc(a.slug)})</option>`).join('')}
+            ${agents.map(a => `<option value="${esc((a as any).id)}">${esc(a.name)} (${esc(a.slug)})</option>`).join('')}
           </select>
         </div>
       </div>
@@ -82,6 +82,8 @@ export function CreateIssueModal(onClose: () => void) {
     submitBtn.disabled = true;
     submitBtn.textContent = 'Creating...';
     const data = Object.fromEntries(new FormData(form).entries());
+    // Remove empty assignedAgentId so Prisma doesn't try to connect a non-existent agent
+    if (!data.assignedAgentId) delete data.assignedAgentId;
     try {
       await createIssue({ ...data, status: 'open' } as Partial<Issue>);
       addToast('Issue created', 'success');

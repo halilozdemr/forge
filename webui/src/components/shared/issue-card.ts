@@ -25,7 +25,7 @@ export function IssueCard(issue: Issue) {
     </div>
     <div class="issue-card-title">${esc(issue.title)}</div>
     <div class="issue-card-footer">
-      <span class="issue-assignee">${esc(issue.assignedTo || 'Unassigned')}</span>
+      <span class="issue-assignee">${esc((issue as any).assignedAgent?.name || 'Unassigned')}</span>
     </div>
   `;
 

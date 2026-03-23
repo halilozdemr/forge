@@ -52,7 +52,9 @@ export async function issueRoutes(server: FastifyInstance) {
       parentIssueId?: string;
     };
   }>("/issues", async (request) => {
-    const issue = await db.issue.create({ data: request.body });
+    // Strip fields that aren't on the Issue model (companyId comes from Project relation)
+    const { companyId, ...issueData } = request.body as Record<string, unknown>;
+    const issue = await db.issue.create({ data: issueData as any });
 
     // Log activity
     const project = await db.project.findUnique({ where: { id: request.body.projectId } });

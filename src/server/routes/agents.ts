@@ -268,19 +268,25 @@ export async function agentRoutes(server: FastifyInstance) {
     return { agent: updatedAgent, message: `Rolled back to revision ${revision}` };
   });
 
-  // DELETE /v1/agents/:slug (fire/terminate)
+  // DELETE /v1/agents/:slug (fire/delete)
   server.delete<{ Params: { slug: string }; Querystring: { companyId: string } }>("/agents/:slug", async (request, reply) => {
     const { slug } = request.params;
     const { companyId } = request.query;
 
     if (!companyId) return reply.code(400).send({ error: "companyId required" });
 
-    const result = await transitionAgent(db, companyId, slug, "terminated");
-    if (!result.success) {
-      return reply.code(400).send({ error: result.error });
-    }
+    const agent = await db.agent.findUnique({
+      where: { companyId_slug: { companyId, slug } },
+    });
+    if (!agent) return reply.code(404).send({ error: "Agent not found" });
 
-    return { message: `Agent "${slug}" terminated` };
+    await db.agent.delete({ where: { id: agent.id } });
+
+    await db.activityLog.create({
+      data: { companyId, actor: "user", action: "agent.deleted", resource: `agent:${slug}` },
+    });
+
+    return { message: `Agent "${slug}" deleted` };
   });
 
   // GET /v1/agents/hierarchy?companyId=xxx

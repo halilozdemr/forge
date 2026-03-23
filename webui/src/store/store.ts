@@ -21,6 +21,7 @@ export class Signal<T> {
 
 // Global Types (Placeholder)
 export interface Agent {
+  id: string;
   slug: string;
   name: string;
   role?: string;
@@ -36,7 +37,7 @@ export interface Issue {
   title: string;
   status: 'open' | 'in_progress' | 'review' | 'done';
   type: 'feature' | 'bug' | 'refactor' | 'release' | 'chore';
-  assignedTo?: string;
+  assignedAgentId?: string;
 }
 
 export interface HealthStatus {
