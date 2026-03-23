@@ -14,6 +14,7 @@ import { createAgentWorker, closeWorker } from "../../bridge/worker.js";
 import { getQueue, closeQueue } from "../../bridge/queue.js";
 import { startHeartbeatScheduler, stopHeartbeatScheduler } from "../../heartbeat/scheduler.js";
 import { startSyncWorker, stopSyncWorker } from "../../sync/worker.js";
+import { syncProjectOpenCodeConfig } from "../../opencode/project-config.js";
 
 const log = createChildLogger("start");
 
@@ -83,6 +84,8 @@ async function runStart(opts: {
       if (forgeConfig.providers?.anthropicApi?.apiKey && !process.env.ANTHROPIC_API_KEY) {
         process.env.ANTHROPIC_API_KEY = forgeConfig.providers.anthropicApi.apiKey;
       }
+
+      await syncProjectOpenCodeConfig(forgeConfig);
     } catch (err) {
       log.warn({ err }, "Failed to read .forge/config.json — using defaults");
     }

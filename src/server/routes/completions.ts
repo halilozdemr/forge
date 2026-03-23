@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
-import { ClaudeCliRunner } from "../../bridge/runners/claude-cli.js";
 import { loadConfig } from "../../utils/config.js";
 import { createChildLogger } from "../../utils/logger.js";
+import { createRunner } from "../../bridge/runners/factory.js";
 
 const log = createChildLogger("completions");
 
@@ -17,6 +17,37 @@ interface CompletionRequest {
 }
 
 const AGENT_TIMEOUT_MS = 900_000; // 15 minutes
+
+function resolveProviderAndModel(rawModel?: string): { provider: string; model: string } {
+  if (!rawModel || rawModel === "claude-cli" || rawModel === "claude-cli-sonnet") {
+    return { provider: "claude-cli", model: "sonnet" };
+  }
+
+  if (rawModel.startsWith("forge/")) {
+    const value = rawModel.slice("forge/".length);
+    const separator = value.indexOf("/");
+    if (separator > 0) {
+      return {
+        provider: value.slice(0, separator),
+        model: value.slice(separator + 1),
+      };
+    }
+  }
+
+  const separator = rawModel.indexOf("/");
+  if (separator > 0) {
+    return {
+      provider: rawModel.slice(0, separator),
+      model: rawModel.slice(separator + 1),
+    };
+  }
+
+  if (rawModel === "default") {
+    return { provider: "opencode-cli", model: rawModel };
+  }
+
+  return { provider: "claude-cli", model: rawModel };
+}
 
 export async function completionsRoutes(server: FastifyInstance) {
   /** OpenAI-compatible chat completions endpoint. Ported from v1 web/server.ts. */
@@ -39,13 +70,12 @@ export async function completionsRoutes(server: FastifyInstance) {
       .join("\n\n");
 
     const config = loadConfig();
-    const cliModel = model === "claude-cli-sonnet" ? "sonnet" : (model || "sonnet");
-
-    const runner = new ClaudeCliRunner();
+    const resolved = resolveProviderAndModel(model);
+    const runner = createRunner(resolved.provider);
     const result = await runner.run({
       projectPath: config.projectPath,
       agentSlug: "chat",
-      model: cliModel,
+      model: resolved.model,
       systemPrompt,
       input: turns,
       permissions: { read: true, grep: true, glob: true },
@@ -58,7 +88,7 @@ export async function completionsRoutes(server: FastifyInstance) {
 
     const id = `chatcmpl-${Date.now()}`;
     const created = Math.floor(Date.now() / 1000);
-    const responseModel = model ?? "claude-cli";
+    const responseModel = model ?? "forge/claude-cli/sonnet";
 
     if (stream) {
       reply.raw.writeHead(200, {

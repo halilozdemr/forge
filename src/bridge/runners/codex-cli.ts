@@ -16,9 +16,10 @@ export class CodexCliRunner implements AgentRunner {
     return new Promise((resolve) => {
       try {
         const args = [
+          "exec",
+          "--skip-git-repo-check",
           ...(config.model ? ["--model", config.model] : []),
           "--full-auto",
-          "--quiet",
           config.input,
         ];
         

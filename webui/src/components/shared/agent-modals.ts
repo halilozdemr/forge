@@ -3,9 +3,10 @@ import { addToast } from './toast';
 import { Agent } from '../../store/store';
 
 const MODELS = [
-  { provider: 'claude-cli', model: 'sonnet',              label: 'Claude Sonnet',    color: 'var(--purple)' },
-  { provider: 'openrouter', model: 'deepseek/deepseek-chat', label: 'DeepSeek V3',     color: 'var(--cyan)' },
-  { provider: 'openrouter', model: 'google/gemini-2.0-flash-001', label: 'Gemini 2.0 Flash', color: 'var(--primary)' },
+  { provider: 'claude-cli', model: 'sonnet',        label: 'Claude Sonnet',      color: 'var(--purple)' },
+  { provider: 'codex-cli', model: 'gpt-5.4',        label: 'GPT-5.4',            color: 'var(--cyan)' },
+  { provider: 'codex-cli', model: 'gpt-5.3-codex',  label: 'GPT-5.3 Codex',      color: 'var(--primary)' },
+  { provider: 'opencode-cli', model: 'default',     label: 'OpenCode (default)', color: 'var(--green)' },
 ];
 
 export function HireAgentModal(onClose: () => void) {

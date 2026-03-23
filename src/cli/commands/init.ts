@@ -11,6 +11,7 @@ import { intro, outro, text, confirm, select, p } from "../prompts.js";
 import { loadConfig } from "../../utils/config.js";
 import { createChildLogger } from "../../utils/logger.js";
 import { PROVIDER_PRESETS, ProviderStrategy, CustomAgentDef } from "../../db/seed.js";
+import { syncProjectOpenCodeConfig } from "../../opencode/project-config.js";
 
 const log = createChildLogger("init");
 
@@ -768,7 +769,10 @@ async function runInit(opts: { yes?: boolean }): Promise<void> {
     };
     await writeFile(join(forgeDir, "config.json"), JSON.stringify(forgeConfig, null, 2));
 
-    // 5. .env entries
+    // 5. Project-local OpenCode overrides
+    await syncProjectOpenCodeConfig(forgeConfig);
+
+    // 6. .env entries
     const envPath = join(absProjectPath, ".env");
     const envLines: string[] = [];
     if (openrouterKey && !process.env.OPENROUTER_API_KEY) envLines.push(`OPENROUTER_API_KEY=${openrouterKey}`);
@@ -780,20 +784,20 @@ async function runInit(opts: { yes?: boolean }): Promise<void> {
       appendFileSync(envPath, "\n# Forge AI Provider Keys\n" + envLines.join("\n") + "\n");
     }
 
-    // 6. CLAUDE.md — Receptionist logic for Claude Code
+    // 7. CLAUDE.md — Receptionist logic for Claude Code
     const claudeMdSrc = join(__dirname, "..", "..", "..", "..", "..", "CLAUDE.md");
     const claudeMdDest = join(absProjectPath, "CLAUDE.md");
     if (existsSync(claudeMdSrc)) {
       await copyFile(claudeMdSrc, claudeMdDest);
     }
 
-    // 7. README.md
+    // 8. README.md
     const readmePath = join(absProjectPath, "README.md");
     if (!existsSync(readmePath)) {
       await writeFile(readmePath, renderReadme({ projectName, description, stack, date }));
     }
 
-    // 7. .gitignore
+    // 9. .gitignore
     const gitignorePath = join(absProjectPath, ".gitignore");
     const gitignoreEntry = "\n# Forge secrets\n.forge/config.json\n";
     if (existsSync(gitignorePath)) {
@@ -803,7 +807,7 @@ async function runInit(opts: { yes?: boolean }): Promise<void> {
       await writeFile(gitignorePath, gitignoreEntry.trim() + "\n");
     }
 
-    // 8. Notify running server
+    // 10. Notify running server
     try {
       const config = loadConfig();
       const res = await fetch(`http://localhost:${config.port}/v1/init`, {
@@ -814,7 +818,7 @@ async function runInit(opts: { yes?: boolean }): Promise<void> {
       if (res.ok) p.log.success("Server synchronized.");
     } catch { /* server not running, that's fine */ }
 
-    // 9. Register forge-mcp in ~/.claude.json (if Claude Code detected)
+    // 11. Register forge-mcp in ~/.claude.json (if Claude Code detected)
     if (hasClaude) {
       try {
         const { readFileSync, writeFileSync, existsSync } = await import("fs");

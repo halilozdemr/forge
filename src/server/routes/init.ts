@@ -4,6 +4,7 @@ import { join } from "path";
 import { readFileSync, existsSync } from "fs";
 import { seedDatabase } from "../../db/seed.js";
 import { syncHeartbeatJobs } from "../../heartbeat/scheduler.js";
+import { syncProjectOpenCodeConfig } from "../../opencode/project-config.js";
 
 export async function initRoutes(fastify: FastifyInstance) {
   fastify.post<{ Body: { forceUpdate?: boolean } }>("/init", async (req, reply) => {
@@ -29,6 +30,8 @@ export async function initRoutes(fastify: FastifyInstance) {
         customAgents: config.agents,
         forceUpdate,
       });
+
+      await syncProjectOpenCodeConfig(config);
 
       // Sync heartbeat schedules for the newly seeded agents
       await syncHeartbeatJobs();
