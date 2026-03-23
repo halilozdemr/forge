@@ -20,6 +20,7 @@ import { approvalCommand } from "./commands/approval.js";
 import { labelCommand } from "./commands/label.js";
 import { exportCommand } from "./commands/export.js";
 import { importCommand } from "./commands/import.js";
+import { logsCommand } from "./commands/logs.js";
 
 const program = new Command("forge");
 
@@ -48,5 +49,6 @@ program.addCommand(approvalCommand());
 program.addCommand(labelCommand());
 program.addCommand(exportCommand());
 program.addCommand(importCommand());
+program.addCommand(logsCommand());
 
 program.parse(process.argv);
