@@ -23,9 +23,12 @@ export class Signal<T> {
 export interface Agent {
   slug: string;
   name: string;
+  role?: string;
   model: string;
+  modelProvider?: string;
+  systemPrompt?: string;
   status: 'idle' | 'active' | 'paused' | 'error';
-  cost: number;
+  cost?: number;
 }
 
 export interface Issue {

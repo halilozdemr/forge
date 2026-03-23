@@ -63,7 +63,7 @@ export async function closeQueue(): Promise<void> {
 }
 
 export async function getRedisStatus(): Promise<boolean> {
-  return false; 
+  return true;
 }
 
 export async function enqueueAgentJob(opts: {

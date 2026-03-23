@@ -1,81 +1,90 @@
-import { fetchQueueJobs } from '../../api/queue';
+import { fetchQueueJobs, Job } from '../../api/queue';
+import { EmptyState } from '../shared/empty-state';
+import { SkeletonRows } from '../shared/skeleton';
 import { esc } from '../../api/utils';
+
+const STATUS_COLOR: Record<Job['status'], string> = {
+  active:    'blue',
+  completed: 'green',
+  failed:    'red',
+  delayed:   'amber',
+  waiting:   'gray',
+};
 
 export function QueuePage() {
   const container = document.createElement('div');
   container.className = 'queue-page';
   container.setAttribute('data-cleanup', '1');
-  
-  const header = document.createElement('div');
-  header.className = 'page-header';
-  header.innerHTML = `
-    <h1>Live Queue</h1>
-    <div class="status-indicator">
-      <span class="dot pulse"></span> Live Polling (3s)
+
+  container.innerHTML = `
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Queue</h1>
+        <p class="page-subtitle">Live job monitor</p>
+      </div>
+      <div class="status-indicator">
+        <span class="dot pulse"></span>
+        <span>Live · polling every 3s</span>
+      </div>
+    </div>
+    <div class="card table-card">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Job</th>
+            <th>Status</th>
+            <th>Progress</th>
+            <th>Created</th>
+          </tr>
+        </thead>
+        <tbody id="queue-tbody"></tbody>
+      </table>
     </div>
   `;
-  container.appendChild(header);
 
-  const tableCard = document.createElement('div');
-  tableCard.className = 'card table-card';
-  tableCard.innerHTML = `
-    <table class="data-table">
-      <thead>
-        <tr>
-          <th>ID</th>
-          <th>Name</th>
-          <th>Status</th>
-          <th>Progress</th>
-          <th>Created</th>
-          <th>Actions</th>
-        </tr>
-      </thead>
-      <tbody id="queue-tbody">
-        <tr><td colspan="6" style="text-align: center; padding: 32px; color: var(--text3);">Loading queue...</td></tr>
-      </tbody>
-    </table>
-  `;
-  container.appendChild(tableCard);
+  const tbody = container.querySelector('#queue-tbody') as HTMLElement;
+  tbody.appendChild(SkeletonRows(4, 5));
 
-  const tbody = tableCard.querySelector('#queue-tbody') as HTMLElement;
-
-  const updateTable = async () => {
+  const update = async () => {
     const jobs = await fetchQueueJobs();
+    tbody.innerHTML = '';
+
     if (jobs.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 32px; color: var(--text3);">No active jobs in queue.</td></tr>';
+      const emptyRow = document.createElement('tr');
+      const emptyCell = document.createElement('td');
+      emptyCell.colSpan = 5;
+      emptyCell.appendChild(EmptyState({ icon: '↗', title: 'Queue is empty', description: 'No jobs running right now.' }));
+      emptyRow.appendChild(emptyCell);
+      tbody.appendChild(emptyRow);
       return;
     }
 
-    tbody.innerHTML = jobs.map(job => `
-      <tr>
-        <td><code style="font-size: 11px;">${esc(job.id.slice(0, 8))}</code></td>
-        <td><strong>${esc(job.name || 'default')}</strong></td>
-        <td><span class="badge badge-${getStatusColor(job.status)}">${esc(job.status)}</span></td>
-        <td>
-          <div class="progress-bar-small">
-            <div class="progress-fill" style="width: ${job.progress || 0}%"></div>
-          </div>
-        </td>
-        <td style="font-size: 12px; color: var(--text3);">${new Date(job.timestamp).toLocaleTimeString()}</td>
-        <td><button class="btn-icon" data-id="${esc(job.id)}">Details</button></td>
-      </tr>
-    `).join('');
+    tbody.innerHTML = jobs.map(job => {
+      const color = STATUS_COLOR[job.status] ?? 'gray';
+      const progress = job.progress ?? 0;
+      const progressColor = job.status === 'failed' ? 'var(--red)' : job.status === 'completed' ? 'var(--green)' : 'var(--primary)';
+      return `
+        <tr>
+          <td><code style="font-family:var(--font-mono);font-size:11px;color:var(--text3)">${esc(job.id.slice(0,8))}</code></td>
+          <td><strong style="font-size:13px">${esc(job.name || 'default')}</strong></td>
+          <td><span class="badge badge-${color}"><span class="badge-dot"></span>${esc(job.status)}</span></td>
+          <td>
+            <div style="display:flex;align-items:center;gap:8px">
+              <div class="progress-bar-small">
+                <div class="progress-fill" style="width:${progress}%;background:${progressColor}"></div>
+              </div>
+              <span style="font-size:11px;color:var(--text3);font-family:var(--font-mono)">${progress}%</span>
+            </div>
+          </td>
+          <td style="font-size:12px;color:var(--text3);font-family:var(--font-mono)">${new Date(job.timestamp).toLocaleTimeString()}</td>
+        </tr>
+      `;
+    }).join('');
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'active': return 'indigo';
-      case 'completed': return 'green';
-      case 'failed': return 'red';
-      case 'delayed': return 'amber';
-      default: return 'text3';
-    }
-  };
-
-  updateTable();
-  const interval = setInterval(updateTable, 3000);
-
-  // Clean up interval when component is removed
+  update();
+  const interval = setInterval(update, 3000);
   (container as any).cleanup = () => clearInterval(interval);
 
   return container;

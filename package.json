@@ -9,9 +9,10 @@
   "main": "./dist/src/index.js",
   "types": "./dist/src/index.d.ts",
   "scripts": {
-    "dev": "tsx bin/forge.ts",
-    "build": "tsc -p tsconfig.build.json",
-    "start": "node dist/bin/the-firm.js",
+    "dev": "tsx bin/forge.ts start",
+    "build": "npm run webui:build && tsc -p tsconfig.build.json",
+    "postinstall": "cd webui && npm install",
+    "start": "node dist/bin/forge.js start",
     "test": "vitest",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",

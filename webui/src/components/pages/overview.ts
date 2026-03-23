@@ -2,96 +2,103 @@ import { healthStore, agentsStore } from '../../store/store';
 import { fetchBudgetUsage, BudgetUsage } from '../../api/budget';
 import { fetchQueueJobs } from '../../api/queue';
 import { fetchAgents } from '../../api/agents';
-import { esc } from '../../api/utils';
+import { SkeletonCard } from '../shared/skeleton';
 
 export function OverviewPage() {
   const container = document.createElement('div');
   container.className = 'overview-page';
-  
-  const header = document.createElement('h1');
-  header.className = 'page-title';
-  header.innerText = 'System Overview';
-  container.appendChild(header);
 
-  const grid = document.createElement('div');
-  grid.className = 'overview-grid';
+  container.innerHTML = `
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Overview</h1>
+        <p class="page-subtitle">System status and key metrics</p>
+      </div>
+    </div>
+    <div class="overview-grid" id="overview-grid"></div>
+  `;
 
-  // 1. Health Card
+  const grid = container.querySelector('#overview-grid') as HTMLElement;
+  for (let i = 0; i < 4; i++) grid.appendChild(SkeletonCard());
+
+  // 1. Health card
   const healthCard = document.createElement('div');
-  healthCard.className = 'card health-card';
+  healthCard.className = 'card stat-card card-interactive';
   healthStore.subscribe(status => {
     if (!status) {
-      healthCard.innerHTML = '<h3>System Health</h3><p>Loading...</p>';
+      healthCard.innerHTML = `<div class="stat-label">System Health</div><div class="stat-value" style="font-size:1.2rem">Checking...</div>`;
       return;
     }
-    const color = status.status === 'healthy' ? 'green' : (status.status === 'degraded' ? 'amber' : 'red');
-    const components = status.components || { db: false, redis: false, worker: false };
+    const s = status.status;
+    const color = s === 'healthy' ? 'green' : s === 'degraded' ? 'amber' : 'red';
+    const c = status.components ?? { db: false, redis: false, worker: false };
     healthCard.innerHTML = `
-      <h3>System Health</h3>
-      <div class="status-summary">
-        <span class="badge badge-${color}">${esc(status.status.toUpperCase())}</span>
-      </div>
+      <div class="stat-icon" style="background:var(--${color}-subtle);color:var(--${color})">⚡</div>
+      <div class="stat-label">System Health</div>
+      <div class="stat-value" style="font-size:1.4rem;color:var(--${color})">${s}</div>
       <div class="health-details">
-        <div class="health-item">DB: <span class="badge badge-${components.db ? 'green' : 'red'}">${components.db ? 'OK' : 'DOWN'}</span></div>
-        <div class="health-item">Redis: <span class="badge badge-${components.redis ? 'green' : 'red'}">${components.redis ? 'OK' : 'DOWN'}</span></div>
-        <div class="health-item">Worker: <span class="badge badge-${components.worker ? 'green' : 'red'}">${components.worker ? 'OK' : 'DOWN'}</span></div>
+        <div class="health-item"><span>Database</span><span class="badge badge-${c.db?'green':'red'}">${c.db?'OK':'DOWN'}</span></div>
+        <div class="health-item"><span>Redis</span><span class="badge badge-${c.redis?'green':'red'}">${c.redis?'OK':'DOWN'}</span></div>
+        <div class="health-item"><span>Worker</span><span class="badge badge-${c.worker?'green':'red'}">${c.worker?'OK':'DOWN'}</span></div>
       </div>
     `;
   });
-  grid.appendChild(healthCard);
 
-  // 2. Budget Card
+  // 2. Budget card
   const budgetCard = document.createElement('div');
-  budgetCard.className = 'card budget-card';
-  fetchBudgetUsage().then((usage: BudgetUsage | null) => {
-    if (!usage) {
-      budgetCard.innerHTML = '<h3>Monthly Cost</h3><p>N/A</p>';
-      return;
-    }
+  budgetCard.className = 'card stat-card card-interactive';
+  budgetCard.innerHTML = `
+    <div class="stat-icon" style="background:var(--green-subtle);color:var(--green)">$</div>
+    <div class="stat-label">Monthly Cost</div>
+    <div class="stat-value">—</div>
+  `;
+  fetchBudgetUsage().then((u: BudgetUsage | null) => {
+    if (!u) return;
     budgetCard.innerHTML = `
-      <h3>Monthly Cost</h3>
-      <div class="cost-value">$${usage.totalUsd.toFixed(2)}</div>
+      <div class="stat-icon" style="background:var(--green-subtle);color:var(--green)">$</div>
+      <div class="stat-label">Monthly Cost</div>
+      <div class="stat-value">$${u.totalUsd.toFixed(2)}</div>
       <div class="token-summary">
-        <div>In: ${usage.inputTokens.toLocaleString()}</div>
-        <div>Out: ${usage.outputTokens.toLocaleString()}</div>
+        <span>In: ${(u.inputTokens/1000).toFixed(0)}k</span>
+        <span>Out: ${(u.outputTokens/1000).toFixed(0)}k</span>
       </div>
     `;
-  }).catch(err => {
-    console.error('Overview: fetchBudgetUsage failed', err);
-    budgetCard.innerHTML = '<h3>Monthly Cost</h3><p>Error loading cost</p>';
-  });
-  grid.appendChild(budgetCard);
+  }).catch(() => {});
 
-  // 3. Agents Card
+  // 3. Agents card
   const agentsCard = document.createElement('div');
-  agentsCard.className = 'card agents-card';
+  agentsCard.className = 'card stat-card card-interactive';
   agentsStore.subscribe(agents => {
-    const total = agents.length;
     const active = agents.filter(a => a.status === 'active').length;
     agentsCard.innerHTML = `
-      <h3>Agents</h3>
-      <div class="stats-value">${active} / ${total}</div>
-      <p>Agents active</p>
+      <div class="stat-icon" style="background:var(--purple-subtle);color:var(--purple)">◉</div>
+      <div class="stat-label">Agents</div>
+      <div class="stat-value">${active} <span style="font-size:1rem;color:var(--text3)">/ ${agents.length}</span></div>
+      <div class="stat-sub">${active} active · ${agents.length - active} idle</div>
     `;
   });
-  fetchAgents(); // Initial fetch
-  grid.appendChild(agentsCard);
+  fetchAgents();
 
-  // 4. Queue Card
+  // 4. Queue card
   const queueCard = document.createElement('div');
-  queueCard.className = 'card queue-card';
+  queueCard.className = 'card stat-card card-interactive';
+  queueCard.innerHTML = `
+    <div class="stat-icon" style="background:var(--amber-subtle);color:var(--amber)">↗</div>
+    <div class="stat-label">Queue</div>
+    <div class="stat-value">—</div>
+  `;
   fetchQueueJobs().then(jobs => {
+    const active = jobs.filter(j => j.status === 'active').length;
+    const failed = jobs.filter(j => j.status === 'failed').length;
     queueCard.innerHTML = `
-      <h3>Queue</h3>
-      <div class="stats-value">${jobs.length}</div>
-      <p>Recent jobs (24h)</p>
+      <div class="stat-icon" style="background:var(--amber-subtle);color:var(--amber)">↗</div>
+      <div class="stat-label">Queue</div>
+      <div class="stat-value">${jobs.length}</div>
+      <div class="stat-sub">${active} active · ${failed} failed</div>
     `;
-  }).catch(err => {
-    console.error('Overview: fetchQueueJobs failed', err);
-    queueCard.innerHTML = '<h3>Queue</h3><p>Error loading queue</p>';
-  });
-  grid.appendChild(queueCard);
+  }).catch(() => {});
 
-  container.appendChild(grid);
+  grid.innerHTML = '';
+  [healthCard, budgetCard, agentsCard, queueCard].forEach(c => grid.appendChild(c));
   return container;
 }

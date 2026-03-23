@@ -3,106 +3,101 @@ import { fetchIssues, updateIssue } from '../../api/issues';
 import { IssueCard } from '../shared/issue-card';
 import { addToast } from '../shared/toast';
 import { CreateIssueModal } from '../shared/issue-modals';
+import { EmptyState } from '../shared/empty-state';
+import { SkeletonIssueCard } from '../shared/skeleton';
 import { esc } from '../../api/utils';
+
+const COLUMNS = [
+  { id: 'open',        label: 'Open' },
+  { id: 'in_progress', label: 'In Progress' },
+  { id: 'review',      label: 'Review' },
+  { id: 'done',        label: 'Done' },
+];
 
 export function IssuesPage() {
   const container = document.createElement('div');
   container.className = 'issues-page';
-  
-  const header = document.createElement('div');
-  header.className = 'page-header';
-  header.innerHTML = `
-    <h1>Issue Board</h1>
-    <button class="btn btn-primary" id="create-issue-btn">+ Create Issue</button>
-  `;
-  container.appendChild(header);
 
-  const createBtn = header.querySelector('#create-issue-btn') as HTMLButtonElement;
-  createBtn.onclick = () => {
+  container.innerHTML = `
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Issues</h1>
+        <p class="page-subtitle">Kanban board</p>
+      </div>
+      <button class="btn btn-primary" id="create-issue-btn">+ Create Issue</button>
+    </div>
+    <div class="kanban-board">
+      ${COLUMNS.map(col => `
+        <div class="kanban-column" data-status="${esc(col.id)}">
+          <div class="kanban-column-header">
+            <h2>${esc(col.label)}</h2>
+            <span class="count">0</span>
+          </div>
+          <div class="kanban-column-content scrollbar"></div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+
+  container.querySelector('#create-issue-btn')!.addEventListener('click', () => {
     const modal = CreateIssueModal(() => document.body.removeChild(modal));
     document.body.appendChild(modal);
-  };
+  });
 
-  const board = document.createElement('div');
-  board.className = 'kanban-board';
-  
-  const columns = [
-    { id: 'open', label: 'Open' },
-    { id: 'in_progress', label: 'In Progress' },
-    { id: 'review', label: 'Review' },
-    { id: 'done', label: 'Done' }
-  ];
+  const board = container.querySelector('.kanban-board') as HTMLElement;
 
-  board.innerHTML = columns.map(col => `
-    <div class="kanban-column" data-status="${esc(col.id)}">
-      <div class="kanban-column-header">
-        <h2>${esc(col.label)}</h2>
-        <span class="count">0</span>
-      </div>
-      <div class="kanban-column-content scrollbar"></div>
-    </div>
-  `).join('');
+  // Skeleton placeholders
+  COLUMNS.forEach(col => {
+    const content = board.querySelector(`[data-status="${col.id}"] .kanban-column-content`) as HTMLElement;
+    for (let i = 0; i < 2; i++) content.appendChild(SkeletonIssueCard());
+  });
 
   issuesStore.subscribe(issues => {
-    columns.forEach(col => {
-      const colEl = board.querySelector(`[data-status="${col.id}"] .kanban-column-content`) as HTMLElement;
+    COLUMNS.forEach(col => {
+      const content = board.querySelector(`[data-status="${col.id}"] .kanban-column-content`) as HTMLElement;
       const countEl = board.querySelector(`[data-status="${col.id}"] .count`) as HTMLElement;
-      
       const colIssues = issues.filter(i => i.status === col.id);
-      countEl.innerText = colIssues.length.toString();
-      
-      colEl.innerHTML = '';
+      countEl.textContent = String(colIssues.length);
+      content.innerHTML = '';
+
+      if (colIssues.length === 0) {
+        content.appendChild(EmptyState({ title: 'No issues', description: `Drop issues here` }));
+        return;
+      }
+
       colIssues.forEach(issue => {
         const card = IssueCard(issue);
-        
-        // Drag and Drop Logic
         card.addEventListener('dragstart', (e: Event) => {
-          const de = e as DragEvent;
-          de.dataTransfer?.setData('text/plain', issue.id);
+          (e as DragEvent).dataTransfer?.setData('text/plain', issue.id);
           card.classList.add('dragging');
         });
-        
-        card.addEventListener('dragend', () => {
-          card.classList.remove('dragging');
-        });
-
-        colEl.appendChild(card);
+        card.addEventListener('dragend', () => card.classList.remove('dragging'));
+        content.appendChild(card);
       });
     });
   });
 
-  // Drop zone logic
-  board.querySelectorAll('.kanban-column-content').forEach(colContent => {
-    colContent.addEventListener('dragover', (e) => {
-      e.preventDefault();
-      colContent.classList.add('drag-over');
-    });
-
-    colContent.addEventListener('dragleave', () => {
-      colContent.classList.remove('drag-over');
-    });
-
-    colContent.addEventListener('drop', async (e: Event) => {
+  board.querySelectorAll('.kanban-column-content').forEach(col => {
+    col.addEventListener('dragover', (e) => { e.preventDefault(); col.classList.add('drag-over'); });
+    col.addEventListener('dragleave', () => col.classList.remove('drag-over'));
+    col.addEventListener('drop', async (e: Event) => {
       const de = e as DragEvent;
       e.preventDefault();
-      colContent.classList.remove('drag-over');
+      col.classList.remove('drag-over');
       const id = de.dataTransfer?.getData('text/plain');
-      const newStatus = (colContent.parentElement as HTMLElement).dataset.status as Issue['status'];
-      
+      const newStatus = (col.parentElement as HTMLElement).dataset.status as Issue['status'];
       if (id && newStatus) {
         try {
           await updateIssue(id, { status: newStatus });
-          addToast(`Issue #${id.slice(0, 4)} moved to ${newStatus}`, 'success');
+          addToast(`Issue moved to ${newStatus}`, 'success');
           fetchIssues();
-        } catch (err) {
-          addToast(`Failed to move issue: ${err}`, 'error');
+        } catch {
+          addToast('Failed to move issue', 'error');
         }
       }
     });
   });
 
-  fetchIssues(); // Initial fetch
-  
-  container.appendChild(board);
+  fetchIssues();
   return container;
 }

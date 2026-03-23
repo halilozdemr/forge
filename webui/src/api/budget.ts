@@ -1,7 +1,5 @@
 import { client } from './client';
-import { CONFIG } from '../config';
-
-const COMPANY_ID = CONFIG.COMPANY_ID;
+import { getCachedCompanyId } from './context';
 
 export interface BudgetUsage {
   totalUsd: number;
@@ -21,7 +19,8 @@ export interface BudgetPolicy {
 
 export async function fetchBudgetUsage() {
   try {
-    const { usage } = await client.get<{ usage: BudgetUsage }>(`/budget/usage?companyId=${COMPANY_ID}`);
+    const companyId = getCachedCompanyId();
+    const { usage } = await client.get<{ usage: BudgetUsage }>(`/budget/usage?companyId=${companyId}`);
     return usage;
   } catch (error) {
     console.error('Failed to fetch budget usage:', error);
@@ -31,7 +30,8 @@ export async function fetchBudgetUsage() {
 
 export async function fetchBudgetPolicies() {
   try {
-    const { policies } = await client.get<{ policies: BudgetPolicy[] }>(`/budget/policies?companyId=${COMPANY_ID}`);
+    const companyId = getCachedCompanyId();
+    const { policies } = await client.get<{ policies: BudgetPolicy[] }>(`/budget/policies?companyId=${companyId}`);
     return policies;
   } catch (error) {
     console.error('Failed to fetch budget policies:', error);
@@ -40,5 +40,5 @@ export async function fetchBudgetPolicies() {
 }
 
 export async function createBudgetPolicy(data: Partial<BudgetPolicy>) {
-  return client.post('/budget/policies', { ...data, companyId: COMPANY_ID });
+  return client.post('/budget/policies', { ...data, companyId: getCachedCompanyId() });
 }

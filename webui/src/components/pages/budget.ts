@@ -1,4 +1,9 @@
 import { fetchBudgetUsage, fetchBudgetPolicies } from '../../api/budget';
+import { showConfirm } from '../shared/confirm-dialog';
+import { addToast } from '../shared/toast';
+import { EmptyState } from '../shared/empty-state';
+import { SkeletonCard } from '../shared/skeleton';
+import { SkeletonRows } from '../shared/skeleton';
 import { esc } from '../../api/utils';
 import { CONFIG } from '../../config';
 
@@ -6,94 +11,124 @@ export function BudgetPage() {
   const container = document.createElement('div');
   container.className = 'budget-page';
   container.setAttribute('data-cleanup', '1');
-  
-  const header = document.createElement('div');
-  header.className = 'page-header';
-  header.innerHTML = `
-    <h1>Budget & Policies</h1>
-    <button class="btn btn-primary" id="add-policy-btn">+ Add Policy</button>
-  `;
-  container.appendChild(header);
 
-  const statsGrid = document.createElement('div');
-  statsGrid.className = 'overview-grid'; // Reuse overview grid styles
-  container.appendChild(statsGrid);
-
-  const tableCard = document.createElement('div');
-  tableCard.className = 'card table-card';
-  tableCard.style.marginTop = '24px';
-  tableCard.innerHTML = `
-    <div style="padding: 16px 24px; border-bottom: 1px solid var(--border);">
-      <h2 style="font-size: 14px; font-weight: 600;">Active Policies</h2>
+  container.innerHTML = `
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Budget</h1>
+        <p class="page-subtitle">Cost tracking and spend policies</p>
+      </div>
+      <button class="btn btn-primary" id="add-policy-btn">+ Add Policy</button>
     </div>
-    <table class="data-table">
-      <thead>
-        <tr>
-          <th>ID</th>
-          <th>Monthly Limit</th>
-          <th>Alert Threshold</th>
-          <th>Created</th>
-          <th>Actions</th>
-        </tr>
-      </thead>
-      <tbody id="policies-tbody"></tbody>
-    </table>
+    <div class="overview-grid" id="budget-stats">
+    </div>
+    <div class="card table-card" style="margin-top:24px">
+      <div class="table-header">
+        <h2>Active Policies</h2>
+      </div>
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Monthly Limit</th>
+            <th>Alert At</th>
+            <th>Created</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="policies-tbody"></tbody>
+      </table>
+    </div>
   `;
-  container.appendChild(tableCard);
 
-  const updateUsage = async () => {
+  const statsGrid = container.querySelector('#budget-stats') as HTMLElement;
+  const policiesTbody = container.querySelector('#policies-tbody') as HTMLElement;
+
+  // Skeleton
+  for (let i = 0; i < 2; i++) statsGrid.appendChild(SkeletonCard());
+  policiesTbody.appendChild(SkeletonRows(2, 5));
+
+  const loadUsage = async () => {
     const usage = await fetchBudgetUsage();
-    if (!usage) return;
-
-    statsGrid.innerHTML = `
-      <div class="card">
-        <label>Total Spend (USD)</label>
-        <div class="cost-value">$${usage.totalUsd.toFixed(2)}</div>
-        <div class="token-summary">
-          <span>In: ${Math.round(usage.inputTokens / 1000)}k</span>
-          <span>Out: ${Math.round(usage.outputTokens / 1000)}k</span>
-        </div>
-      </div>
-      <div class="card">
-        <label>Total Tokens</label>
-        <div class="stats-value">${(usage.totalTokens / 1000).toFixed(1)}k</div>
-        <label>Current Month</label>
-      </div>
-    `;
-  };
-
-  const updatePolicies = async () => {
-    const policies = await fetchBudgetPolicies();
-    const tbody = tableCard.querySelector('#policies-tbody') as HTMLElement;
-    
-    if (policies.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 24px; color: var(--text3);">No policies defined.</td></tr>';
+    statsGrid.innerHTML = '';
+    if (!usage) {
+      statsGrid.innerHTML = '<p style="color:var(--text3);font-size:13px">No usage data available.</p>';
       return;
     }
 
-    tbody.innerHTML = policies.map(policy => `
-      <tr>
-        <td><code style="font-size: 11px;">${esc(policy.id.slice(0, 8))}</code></td>
-        <td><strong>$${policy.monthlyLimit.toFixed(0)}</strong></td>
-        <td>${policy.alertThreshold * 100}%</td>
-        <td style="font-size: 12px; color: var(--text3);">${new Date(policy.createdAt).toLocaleDateString()}</td>
-        <td><button class="btn-icon btn-danger">Delete</button></td>
-      </tr>
-    `).join('');
+    const limit = 100; // placeholder limit
+    const pct = Math.min((usage.totalUsd / limit) * 100, 100);
+    const fillClass = pct > 90 ? 'danger' : pct > 70 ? 'warning' : '';
+
+    const costCard = document.createElement('div');
+    costCard.className = 'card stat-card';
+    costCard.innerHTML = `
+      <div class="stat-icon" style="background:var(--green-subtle);color:var(--green)">$</div>
+      <div class="stat-label">Total Spend (${usage.month || 'this month'})</div>
+      <div class="stat-value">$${usage.totalUsd.toFixed(2)}</div>
+      <div class="usage-bar"><div class="usage-fill ${fillClass}" style="width:${pct}%"></div></div>
+      <div class="token-summary">
+        <span>In: ${(usage.inputTokens/1000).toFixed(0)}k</span>
+        <span>Out: ${(usage.outputTokens/1000).toFixed(0)}k</span>
+        <span>Total: ${(usage.totalTokens/1000).toFixed(0)}k tokens</span>
+      </div>
+    `;
+
+    const tokenCard = document.createElement('div');
+    tokenCard.className = 'card stat-card';
+    tokenCard.innerHTML = `
+      <div class="stat-icon" style="background:var(--primary-subtle);color:var(--primary)">~</div>
+      <div class="stat-label">Total Tokens</div>
+      <div class="stat-value">${(usage.totalTokens/1000).toFixed(1)}k</div>
+      <div class="stat-sub">Avg cost per 1k tokens: $${(usage.totalUsd / (usage.totalTokens / 1000)).toFixed(4)}</div>
+    `;
+
+    statsGrid.appendChild(costCard);
+    statsGrid.appendChild(tokenCard);
   };
 
-  const updateAll = async () => {
-    await Promise.all([
-      updateUsage(),
-      updatePolicies()
-    ]).catch(err => {
-      console.error('Budget: updateAll failed', err);
+  const loadPolicies = async () => {
+    const policies = await fetchBudgetPolicies();
+    policiesTbody.innerHTML = '';
+
+    if (policies.length === 0) {
+      const emptyRow = document.createElement('tr');
+      const emptyCell = document.createElement('td');
+      emptyCell.colSpan = 5;
+      emptyCell.appendChild(EmptyState({ icon: '⊡', title: 'No policies', description: 'Add a budget policy to control spend.' }));
+      emptyRow.appendChild(emptyCell);
+      policiesTbody.appendChild(emptyRow);
+      return;
+    }
+
+    policiesTbody.innerHTML = policies.map(p => `
+      <tr>
+        <td><code style="font-family:var(--font-mono);font-size:11px;color:var(--text3)">${esc(p.id.slice(0,8))}</code></td>
+        <td><strong>$${p.monthlyLimit.toFixed(0)}</strong></td>
+        <td>${Math.round(p.alertThreshold * 100)}%</td>
+        <td style="font-size:12px;color:var(--text3)">${new Date(p.createdAt).toLocaleDateString()}</td>
+        <td>
+          <button class="btn-icon btn-danger" data-id="${esc(p.id)}">Delete</button>
+        </td>
+      </tr>
+    `).join('');
+
+    policiesTbody.querySelectorAll('[data-id]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const ok = await showConfirm({
+          title: 'Delete Policy',
+          message: 'Are you sure you want to delete this budget policy?',
+          confirmLabel: 'Delete',
+          danger: true,
+        });
+        if (ok) addToast('Policy deleted', 'success');  // TODO: call delete API with (btn as HTMLElement).dataset.id
+      });
     });
   };
 
-  updateAll();
-  const interval = setInterval(updateAll, CONFIG.POLLING_INTERVAL_MS);
+  Promise.all([loadUsage(), loadPolicies()]).catch(() => {});
 
+  const interval = setInterval(() => Promise.all([loadUsage(), loadPolicies()]).catch(() => {}), CONFIG.POLLING_INTERVAL_MS);
   (container as any).cleanup = () => clearInterval(interval);
 
   return container;

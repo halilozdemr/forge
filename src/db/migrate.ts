@@ -1,14 +1,35 @@
 import { execSync } from "child_process";
-import { resolve, join } from "path";
+import { resolve, join, dirname } from "path";
+import { fileURLToPath } from "url";
+import { existsSync } from "fs";
 import { createChildLogger } from "../utils/logger.js";
 
 const log = createChildLogger("migrate");
 
+function findProjectRoot(): string {
+  // Try relative to this source file first: src/db/migrate.ts → project root
+  const __filename = fileURLToPath(import.meta.url);
+  const __dirname = dirname(__filename);
+
+  // When running via tsx: __dirname = v3/src/db → go up 2 levels = v3/
+  const fromSource = resolve(__dirname, "..", "..");
+  if (existsSync(join(fromSource, "prisma", "schema.prisma"))) {
+    return fromSource;
+  }
+
+  // When running from dist: dist/src/db → go up 3 levels = v3/
+  const fromDist = resolve(__dirname, "..", "..", "..");
+  if (existsSync(join(fromDist, "prisma", "schema.prisma"))) {
+    return fromDist;
+  }
+
+  // Fallback to cwd
+  return process.cwd();
+}
+
 export async function runMigrations(): Promise<void> {
-  // dist/src/db → dist/src → dist → project root
-  const projectRoot = resolve(join(import.meta.dirname, "..", "..", ".."));
+  const projectRoot = findProjectRoot();
   const schemaPath = join(projectRoot, "prisma", "schema.prisma");
-  // Use local prisma binary (v5) instead of globally installed npx prisma (may be v7+)
   const prismaBin = join(projectRoot, "node_modules", ".bin", "prisma");
 
   log.info({ schemaPath }, "Running database migrations...");

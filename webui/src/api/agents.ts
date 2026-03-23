@@ -1,12 +1,11 @@
 import { client } from './client';
 import { agentsStore, Agent } from '../store/store';
-import { CONFIG } from '../config';
-
-const COMPANY_ID = CONFIG.COMPANY_ID;
+import { getCachedCompanyId } from './context';
 
 export async function fetchAgents() {
   try {
-    const { agents } = await client.get<{ agents: Agent[] }>(`/agents?companyId=${COMPANY_ID}`);
+    const companyId = getCachedCompanyId();
+    const { agents } = await client.get<{ agents: Agent[] }>(`/agents?companyId=${companyId}`);
     agentsStore.set(agents);
     return agents;
   } catch (error) {
@@ -16,13 +15,13 @@ export async function fetchAgents() {
 }
 
 export async function hireAgent(data: Partial<Agent>) {
-  return client.post('/agents', { ...data, companyId: COMPANY_ID });
+  return client.post('/agents', { ...data, companyId: getCachedCompanyId() });
 }
 
 export async function updateAgent(slug: string, data: Partial<Agent>) {
-  return client.put(`/agents/${slug}`, { ...data, companyId: COMPANY_ID });
+  return client.put(`/agents/${slug}`, { ...data, companyId: getCachedCompanyId() });
 }
 
 export async function fireAgent(slug: string) {
-  return client.delete(`/agents/${slug}?companyId=${COMPANY_ID}`);
+  return client.delete(`/agents/${slug}?companyId=${getCachedCompanyId()}`);
 }

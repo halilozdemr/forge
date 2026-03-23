@@ -44,22 +44,36 @@ async function runStart(opts: {
   // 1. Run DB migrations
   await runMigrations();
 
-  // 2. Seed default company/agents if .forge/config.json exists
+  // 2. Seed default company/agents
   const forgeConfigPath = join(process.cwd(), ".forge", "config.json");
+  let seedOptions = {
+    companyName: "My Forge",
+    companySlug: "my-forge",
+    projectName: "default",
+    projectPath: process.cwd(),
+    stack: "other",
+  };
   if (existsSync(forgeConfigPath)) {
     try {
       const forgeConfig = JSON.parse(readFileSync(forgeConfigPath, "utf-8"));
-      const db = getDb();
-      await seedDatabase(db, {
-        companyName: forgeConfig.company?.name ?? "My Forge",
-        companySlug: forgeConfig.company?.slug ?? "my-forge",
-        projectName: forgeConfig.project?.name ?? "default",
-        projectPath: forgeConfig.project?.path ?? process.cwd(),
-        stack: forgeConfig.project?.stack ?? "other",
-      });
+      seedOptions = {
+        companyName: forgeConfig.company?.name ?? seedOptions.companyName,
+        companySlug: forgeConfig.company?.slug ?? seedOptions.companySlug,
+        projectName: forgeConfig.project?.name ?? seedOptions.projectName,
+        projectPath: forgeConfig.project?.path ?? seedOptions.projectPath,
+        stack: forgeConfig.project?.stack ?? seedOptions.stack,
+      };
     } catch (err) {
-      log.warn({ err }, "Failed to seed from .forge/config.json — continuing");
+      log.warn({ err }, "Failed to read .forge/config.json — using defaults");
     }
+  } else {
+    log.info("No .forge/config.json found — seeding with defaults. Run `forge init` for customization.");
+  }
+  try {
+    const db = getDb();
+    await seedDatabase(db, seedOptions);
+  } catch (err) {
+    log.warn({ err }, "Failed to seed database — continuing");
   }
 
   // 4. Queue + worker

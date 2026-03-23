@@ -2,6 +2,22 @@ import type { FastifyInstance } from "fastify";
 import { getDb } from "../../db/client.js";
 
 export async function statusRoutes(server: FastifyInstance) {
+  // Context endpoint: returns the first company and project for WebUI auto-discovery
+  server.get("/context", async () => {
+    const db = getDb();
+    const company = await db.company.findFirst({ orderBy: { createdAt: "asc" } });
+    if (!company) {
+      return { companyId: null, companyName: null, projectId: null, projectName: null };
+    }
+    const project = await db.project.findFirst({ where: { companyId: company.id }, orderBy: { createdAt: "asc" } });
+    return {
+      companyId: company.id,
+      companyName: company.name,
+      projectId: project?.id ?? null,
+      projectName: project?.name ?? null,
+    };
+  });
+
   server.get<{ Querystring: { companyId?: string } }>("/status", async (request) => {
     const db = getDb();
     const { companyId } = request.query;
