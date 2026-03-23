@@ -32,6 +32,7 @@ model Company {
   secrets        CompanySecret[]
   approvals      Approval[]
   labels         Label[]
+  pipelineRuns   PipelineRun[]
 
   @@map("companies")
 }
@@ -51,6 +52,7 @@ model Project {
   company Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
   sprints Sprint[]
   issues  Issue[]
+  pipelineRuns PipelineRun[]
 
   @@unique([companyId, name])
   @@map("projects")
@@ -70,6 +72,7 @@ model Agent {
   status        String  @default("idle")
   permissions   String  @default("{}")
   adapterConfig String  @default("{}")
+  clientConfig  String  @default("{}")
   maxConcurrent Int     @default(1)
   heartbeatCron String?
   maxSessionRuns   Int @default(20)
@@ -138,8 +141,64 @@ model Issue {
   comments           IssueComment[]
   workProducts       IssueWorkProduct[]
   issueLabels        IssueLabel[]
+  pipelineRuns       PipelineRun[]
 
   @@map("issues")
+}
+
+model PipelineRun {
+  id                String   @id @default(cuid())
+  companyId         String
+  projectId         String?
+  issueId           String?
+  source            String
+  requestType       String
+  status            String   @default("pending")
+  requestedBy       String
+  requestedAgentSlug String?
+  entryAgentSlug    String
+  currentStepKey    String?
+  clientRequestKey  String?
+  planJson          String   @default("{}")
+  lastError         String?
+  createdAt         DateTime @default(now())
+  startedAt         DateTime @default(now())
+  completedAt       DateTime?
+  updatedAt         DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  project Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  issue   Issue?   @relation(fields: [issueId], references: [id], onDelete: SetNull)
+  stepRuns PipelineStepRun[]
+
+  @@unique([companyId, clientRequestKey])
+  @@index([companyId, status])
+  @@index([issueId])
+  @@map("pipeline_runs")
+}
+
+model PipelineStepRun {
+  id            String   @id @default(cuid())
+  pipelineRunId String
+  stepKey       String
+  agentSlug     String
+  status        String   @default("pending")
+  inputSnapshot String
+  dependsOn     String   @default("[]")
+  queueJobId    String?  @unique
+  attempts      Int      @default(0)
+  resultSummary String?
+  startedAt     DateTime?
+  completedAt   DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  pipelineRun PipelineRun @relation(fields: [pipelineRunId], references: [id], onDelete: Cascade)
+
+  @@unique([pipelineRunId, stepKey])
+  @@index([pipelineRunId, status])
+  @@index([queueJobId])
+  @@map("pipeline_step_runs")
 }
 
 // 6. Sprints
@@ -286,6 +345,9 @@ model QueueJob {
   startedAt   DateTime?
   completedAt DateTime?
   queuedAt    DateTime  @default(now())
+  workerId    String?
+  leaseExpiresAt DateTime?
+  lastHeartbeatAt DateTime?
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
   issue   Issue?  @relation(fields: [issueId], references: [id])

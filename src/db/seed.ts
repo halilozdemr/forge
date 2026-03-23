@@ -8,6 +8,11 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 const log = createChildLogger("seed");
+const PROMPT_FILE_ALIASES: Record<string, string> = {
+  receptionist: "ceo.md",
+  builder: "engineer.md",
+  scrum_master: "scrum-master.md",
+};
 
 // Tier definitions: heavy agents need strong reasoning, light agents do routine work
 const HEAVY_AGENTS = ["architect", "reviewer", "debugger"]; // need best model
@@ -220,7 +225,8 @@ export async function seedDatabase(db: PrismaClient, options: SeedOptions): Prom
   if (options.customAgents !== undefined) {
     // Custom agents path: each agent has its own provider/model
     for (const agentDef of options.customAgents) {
-      const promptPath = join(__dirname, "..", "agents", "defaults", `${agentDef.slug}.md`);
+      const promptFileName = PROMPT_FILE_ALIASES[agentDef.slug] ?? `${agentDef.slug}.md`;
+      const promptPath = join(__dirname, "..", "agents", "defaults", promptFileName);
       const promptFile = existsSync(promptPath) ? promptPath : null;
 
       await db.agent.upsert({
@@ -230,6 +236,7 @@ export async function seedDatabase(db: PrismaClient, options: SeedOptions): Prom
               promptFile,
               modelProvider: agentDef.modelProvider,
               model: agentDef.model,
+              clientConfig: JSON.stringify(buildDefaultClientConfig(agentDef.slug)),
             }
           : { promptFile },
         create: {
@@ -242,6 +249,7 @@ export async function seedDatabase(db: PrismaClient, options: SeedOptions): Prom
           reportsTo: agentDef.reportsTo,
           status: "idle",
           permissions: JSON.stringify(agentDef.permissions),
+          clientConfig: JSON.stringify(buildDefaultClientConfig(agentDef.slug)),
           heartbeatCron: agentDef.heartbeatCron,
           promptFile,
         },
@@ -255,7 +263,8 @@ export async function seedDatabase(db: PrismaClient, options: SeedOptions): Prom
       const isHeavy = HEAVY_AGENTS.includes(agentDef.slug);
       const { provider, model } = isHeavy ? strategy.heavy : strategy.light;
 
-      const promptPath = join(__dirname, "..", "agents", "defaults", `${agentDef.slug}.md`);
+      const promptFileName = PROMPT_FILE_ALIASES[agentDef.slug] ?? `${agentDef.slug}.md`;
+      const promptPath = join(__dirname, "..", "agents", "defaults", promptFileName);
       const promptFile = existsSync(promptPath) ? promptPath : null;
 
       await db.agent.upsert({
@@ -267,6 +276,7 @@ export async function seedDatabase(db: PrismaClient, options: SeedOptions): Prom
               promptFile,
               modelProvider: provider,
               model,
+              clientConfig: JSON.stringify(buildDefaultClientConfig(agentDef.slug)),
             }
           : {
               // On re-seed: only update promptFile (don't overwrite manual model changes)
@@ -282,6 +292,7 @@ export async function seedDatabase(db: PrismaClient, options: SeedOptions): Prom
           reportsTo: agentDef.reportsTo,
           status: "idle",
           permissions: JSON.stringify(agentDef.permissions),
+          clientConfig: JSON.stringify(buildDefaultClientConfig(agentDef.slug)),
           heartbeatCron: agentDef.heartbeatCron,
           promptFile,
         },
@@ -293,4 +304,19 @@ export async function seedDatabase(db: PrismaClient, options: SeedOptions): Prom
   log.info(`Seeded: company=${company.id}, project=${project.id}, agents=${agentCount}${options.customAgents !== undefined ? " (custom)" : ` (heavy: ${options.providerStrategy?.heavy.provider ?? "claude-cli"}/${options.providerStrategy?.heavy.model ?? "sonnet"}, light: ${options.providerStrategy?.light.provider ?? "claude-cli"}/${options.providerStrategy?.light.model ?? "sonnet"})`}`);
 
   return { companyId: company.id, projectId: project.id, agentCount };
+}
+
+function buildDefaultClientConfig(slug: string) {
+  const displayOrder = LIGHT_AGENTS.indexOf(slug) >= 0
+    ? LIGHT_AGENTS.indexOf(slug)
+    : HEAVY_AGENTS.indexOf(slug) >= 0
+      ? HEAVY_AGENTS.indexOf(slug) + LIGHT_AGENTS.length
+      : 99;
+
+  return {
+    visibleIn: ["claude-code", "opencode"],
+    opencodeMode: slug === "receptionist" ? "primary" : "subagent",
+    displayOrder,
+    entrypoint: slug === "receptionist",
+  };
 }

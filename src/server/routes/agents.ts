@@ -3,6 +3,7 @@ import { getDb } from "../../db/client.js";
 import { transitionAgent } from "../../agents/lifecycle.js";
 import { buildHierarchy, formatHierarchy, getEscalationChain } from "../../agents/hierarchy.js";
 import { isSupportedModelProvider, isValidModel } from "../../agents/validation.js";
+import { syncProjectClientProjectionsFromRegistry } from "../../opencode/project-config.js";
 
 const EDITABLE_STATUSES = new Set(["idle", "active", "paused", "terminated"]);
 
@@ -11,6 +12,28 @@ function requireNonEmptyString(value: unknown, field: string): { ok: true; value
     return { ok: false, error: `${field} must be a non-empty string` };
   }
   return { ok: true, value: value.trim() };
+}
+
+function parseJsonObject(value: unknown, field: string): { ok: true; value: Record<string, unknown> } | { ok: false; error: string } {
+  const parsed = typeof value === "string"
+    ? (() => {
+        try {
+          return JSON.parse(value) as unknown;
+        } catch {
+          return Symbol.for("invalid-json");
+        }
+      })()
+    : value;
+
+  if (parsed === Symbol.for("invalid-json")) {
+    return { ok: false, error: `${field} must be valid JSON` };
+  }
+
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    return { ok: false, error: `${field} must be a JSON object` };
+  }
+
+  return { ok: true, value: parsed as Record<string, unknown> };
 }
 
 export async function agentRoutes(server: FastifyInstance) {
@@ -106,6 +129,12 @@ export async function agentRoutes(server: FastifyInstance) {
         model,
         reportsTo: reportsTo || null,
         permissions: JSON.stringify(permissions || {}),
+        clientConfig: JSON.stringify({
+          visibleIn: ["claude-code", "opencode"],
+          opencodeMode: slug === "receptionist" ? "primary" : "subagent",
+          displayOrder: 99,
+          entrypoint: slug === "receptionist",
+        }),
         heartbeatCron: heartbeatCron || null,
         status: "idle",
       },
@@ -114,6 +143,11 @@ export async function agentRoutes(server: FastifyInstance) {
     await db.activityLog.create({
       data: { companyId, actor: "user", action: "agent.hired", resource: `agent:${slug}` },
     });
+
+    const project = await db.project.findFirst({ where: { companyId }, orderBy: { createdAt: "asc" } });
+    if (project) {
+      await syncProjectClientProjectionsFromRegistry({ db, companyId, projectPath: project.path });
+    }
 
     return { agent };
   });
@@ -130,10 +164,10 @@ export async function agentRoutes(server: FastifyInstance) {
       model?: string;
       promptFile?: string | null;
       reportsTo?: string | null;
-      permissions?: Record<string, boolean>;
+      permissions?: Record<string, boolean> | string;
       maxConcurrent?: number;
       heartbeatCron?: string | null;
-      clientConfig?: Record<string, unknown>;
+      clientConfig?: Record<string, unknown> | string;
       changeNote?: string;
     };
   }>("/agents/:slug", async (request, reply) => {
@@ -225,17 +259,20 @@ export async function agentRoutes(server: FastifyInstance) {
     }
 
     if (request.body.permissions !== undefined) {
-      const permissions = request.body.permissions;
-      const isObject = typeof permissions === "object" && permissions !== null && !Array.isArray(permissions);
-      if (!isObject) {
-        return reply.code(400).send({ error: "permissions must be an object of boolean values" });
-      }
-      for (const [key, value] of Object.entries(permissions)) {
+      const parsed = parseJsonObject(request.body.permissions, "permissions");
+      if (!parsed.ok) return reply.code(400).send({ error: parsed.error });
+      for (const [key, value] of Object.entries(parsed.value)) {
         if (typeof value !== "boolean") {
           return reply.code(400).send({ error: `permissions.${key} must be boolean` });
         }
       }
-      updates.permissions = JSON.stringify(permissions);
+      updates.permissions = JSON.stringify(parsed.value);
+    }
+
+    if (request.body.clientConfig !== undefined) {
+      const parsed = parseJsonObject(request.body.clientConfig, "clientConfig");
+      if (!parsed.ok) return reply.code(400).send({ error: parsed.error });
+      updates.clientConfig = JSON.stringify(parsed.value);
     }
 
     if (request.body.maxConcurrent !== undefined) {
@@ -263,6 +300,7 @@ export async function agentRoutes(server: FastifyInstance) {
         promptFile: currentAgent.promptFile,
         reportsTo: currentAgent.reportsTo,
         permissions: currentAgent.permissions,
+        clientConfig: currentAgent.clientConfig,
         adapterConfig: currentAgent.adapterConfig,
         heartbeatCron: currentAgent.heartbeatCron,
         maxConcurrent: currentAgent.maxConcurrent,
@@ -302,6 +340,11 @@ export async function agentRoutes(server: FastifyInstance) {
     const agent = await db.agent.findUnique({
       where: { companyId_slug: { companyId: normalizedCompanyId, slug } },
     });
+
+    const project = await db.project.findFirst({ where: { companyId: normalizedCompanyId }, orderBy: { createdAt: "asc" } });
+    if (project) {
+      await syncProjectClientProjectionsFromRegistry({ db, companyId: normalizedCompanyId, projectPath: project.path });
+    }
 
     return { agent };
   });
@@ -370,6 +413,7 @@ export async function agentRoutes(server: FastifyInstance) {
       promptFile: agent.promptFile,
       reportsTo: agent.reportsTo,
       permissions: agent.permissions,
+      clientConfig: agent.clientConfig,
       adapterConfig: agent.adapterConfig,
       heartbeatCron: agent.heartbeatCron,
       maxConcurrent: agent.maxConcurrent,
@@ -392,6 +436,11 @@ export async function agentRoutes(server: FastifyInstance) {
       data: config,
     });
 
+    const project = await db.project.findFirst({ where: { companyId }, orderBy: { createdAt: "asc" } });
+    if (project) {
+      await syncProjectClientProjectionsFromRegistry({ db, companyId, projectPath: project.path });
+    }
+
     return { agent: updatedAgent, message: `Rolled back to revision ${revision}` };
   });
 
@@ -412,6 +461,11 @@ export async function agentRoutes(server: FastifyInstance) {
     await db.activityLog.create({
       data: { companyId, actor: "user", action: "agent.deleted", resource: `agent:${slug}` },
     });
+
+    const project = await db.project.findFirst({ where: { companyId }, orderBy: { createdAt: "asc" } });
+    if (project) {
+      await syncProjectClientProjectionsFromRegistry({ db, companyId, projectPath: project.path });
+    }
 
     return { message: `Agent "${slug}" deleted` };
   });

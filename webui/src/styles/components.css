@@ -937,6 +937,50 @@
   align-items: center;
 }
 
+.issue-card-pipeline {
+  margin-bottom: 10px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface2);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.issue-card-pipeline-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.issue-pipeline-step {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text2);
+}
+
+.issue-card-pipeline-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text3);
+  font-family: var(--font-mono);
+}
+
+.issue-pipeline-excerpt {
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text2);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  white-space: pre-wrap;
+}
+
 .issue-assignee {
   font-size: 11px;
   color: var(--text3);

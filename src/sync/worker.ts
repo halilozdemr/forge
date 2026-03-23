@@ -10,6 +10,9 @@ let isRunning = false;
 let pollingTimer: NodeJS.Timeout | null = null;
 let cloudUrl: string | null = null;
 let token: string | null = null;
+let consecutiveFailures = 0;
+let pausedUntil = 0;
+let lastFailureLogAt = 0;
 
 export async function startSyncWorker(): Promise<void> {
   if (isRunning) return;
@@ -34,6 +37,8 @@ export async function startSyncWorker(): Promise<void> {
   pollingTimer = setInterval(async () => {
     let readyEvents: any[] = [];
     try {
+      if (Date.now() < pausedUntil) return;
+
       const db = getDb();
       const events = await db.syncOutbox.findMany({
         where: {
@@ -77,6 +82,8 @@ export async function startSyncWorker(): Promise<void> {
       });
 
       if (res.ok) {
+        consecutiveFailures = 0;
+        pausedUntil = 0;
         await db.syncOutbox.updateMany({
           where: { id: { in: readyEvents.map(e => e.id) } },
           data: { status: "sent", sentAt: new Date() }
@@ -85,7 +92,18 @@ export async function startSyncWorker(): Promise<void> {
         throw new Error(`Cloud returned ${res.status}`);
       }
     } catch (e) {
-      log.error({ err: (e as Error).message }, "Sync worker failed to send batch");
+      consecutiveFailures += 1;
+      pausedUntil = Date.now() + Math.min(5 * 60 * 1000, Math.pow(2, consecutiveFailures) * 5000);
+
+      const errMessage = (e as Error).message;
+      const now = Date.now();
+      if (consecutiveFailures === 1 || (now - lastFailureLogAt) > 60_000) {
+        lastFailureLogAt = now;
+        log.warn({ err: errMessage, consecutiveFailures }, "Sync worker could not reach cloud; backing off");
+      } else {
+        log.debug({ err: errMessage, consecutiveFailures }, "Sync worker send failed during backoff");
+      }
+
       if (readyEvents.length > 0) {
         try {
           const db = getDb();

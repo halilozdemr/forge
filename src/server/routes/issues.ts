@@ -1,6 +1,77 @@
 import type { FastifyInstance } from "fastify";
 import { getDb } from "../../db/client.js";
-import { FirmOrchestrator } from "../../orchestrator/index.js";
+
+function summarizePipeline(pipeline: {
+  id: string;
+  status: string;
+  entryAgentSlug: string;
+  currentStepKey: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  startedAt: Date;
+  completedAt: Date | null;
+  stepRuns: Array<{
+    stepKey: string;
+    agentSlug: string;
+    status: string;
+    queuedAt?: Date;
+    resultSummary?: string | null;
+    startedAt: Date | null;
+    completedAt: Date | null;
+  }>;
+}) {
+  const activeStep =
+    pipeline.stepRuns.find((step) => step.status === "running")
+    ?? pipeline.stepRuns.find((step) => step.status === "queued")
+    ?? pipeline.stepRuns.find((step) => step.stepKey === pipeline.currentStepKey)
+    ?? pipeline.stepRuns.find((step) => step.status === "pending")
+    ?? null;
+
+  const completedSteps = pipeline.stepRuns.filter((step) => step.status === "completed").length;
+
+  return {
+    id: pipeline.id,
+    status: pipeline.status,
+    entryAgentSlug: pipeline.entryAgentSlug,
+    currentStepKey: pipeline.currentStepKey,
+    activeStepKey: activeStep?.stepKey ?? null,
+    activeAgentSlug: activeStep?.agentSlug ?? null,
+    activeStatus: activeStep?.status ?? null,
+    activeExcerpt: activeStep?.resultSummary ?? null,
+    completedSteps,
+    totalSteps: pipeline.stepRuns.length,
+    startedAt: pipeline.startedAt,
+    completedAt: pipeline.completedAt,
+    updatedAt: pipeline.updatedAt,
+  };
+}
+
+function decorateIssue<T extends {
+  pipelineRuns?: Array<{
+    id: string;
+    status: string;
+    entryAgentSlug: string;
+    currentStepKey: string | null;
+    createdAt: Date;
+    updatedAt: Date;
+    startedAt: Date;
+    completedAt: Date | null;
+      stepRuns: Array<{
+        stepKey: string;
+        agentSlug: string;
+        status: string;
+        resultSummary?: string | null;
+        startedAt: Date | null;
+        completedAt: Date | null;
+      }>;
+  }>;
+}>(issue: T) {
+  const latestPipeline = issue.pipelineRuns?.[0];
+  return {
+    ...issue,
+    pipeline: latestPipeline ? summarizePipeline(latestPipeline) : null,
+  };
+}
 
 export async function issueRoutes(server: FastifyInstance) {
   const db = getDb();
@@ -18,10 +89,21 @@ export async function issueRoutes(server: FastifyInstance) {
     const issues = await db.issue.findMany({
       where,
       orderBy: { createdAt: "desc" },
-      include: { assignedAgent: { select: { slug: true, name: true } } },
+      include: {
+        assignedAgent: { select: { slug: true, name: true } },
+        pipelineRuns: {
+          orderBy: { createdAt: "desc" },
+          take: 1,
+          include: {
+            stepRuns: {
+              orderBy: { createdAt: "asc" },
+            },
+          },
+        },
+      },
     });
 
-    return { issues };
+    return { issues: issues.map((issue) => decorateIssue(issue)) };
   });
 
   // GET /v1/issues/:id
@@ -32,11 +114,20 @@ export async function issueRoutes(server: FastifyInstance) {
         assignedAgent: { select: { slug: true, name: true } },
         sprint: { select: { id: true, number: true, goal: true } },
         subIssues: true,
+        pipelineRuns: {
+          orderBy: { createdAt: "desc" },
+          take: 1,
+          include: {
+            stepRuns: {
+              orderBy: { createdAt: "asc" },
+            },
+          },
+        },
       },
     });
 
     if (!issue) return reply.code(404).send({ error: "Issue not found" });
-    return { issue };
+    return { issue: decorateIssue(issue) };
   });
 
   // POST /v1/issues
@@ -68,25 +159,6 @@ export async function issueRoutes(server: FastifyInstance) {
           metadata: JSON.stringify({ title: issue.title, type: issue.type }),
         },
       });
-    }
-
-    // Auto-dispatch pipeline when issue is created with a supported type
-    if (project && ["feature", "bug", "refactor", "release"].includes(issue.type)) {
-      const orchestrator = new FirmOrchestrator();
-      orchestrator
-        .dispatch({
-          companyId: project.companyId,
-          projectId: project.id,
-          issueId: issue.id,
-          issueType: issue.type,
-          title: issue.title,
-          description: issue.description ?? undefined,
-          projectPath: project.path,
-        })
-        .catch((err: Error) => {
-          // Non-fatal: log but don't fail the HTTP response
-          console.error(`Pipeline dispatch failed for issue ${issue.id}: ${err.message}`);
-        });
     }
 
     return { issue };
@@ -130,7 +202,7 @@ export async function issueRoutes(server: FastifyInstance) {
   // POST /v1/issues/:id/run
   server.post<{
     Params: { id: string };
-    Body: { companyId: string; agentSlug?: string };
+    Body: { companyId: string; agentSlug?: string; input?: string };
   }>("/issues/:id/run", async (request, reply) => {
     const issue = await db.issue.findUnique({
       where: { id: request.params.id },
@@ -156,7 +228,10 @@ export async function issueRoutes(server: FastifyInstance) {
       agentSlug: agent.slug,
       agentId: agent.id,
       issueId: issue.id,
-      input: `Execute issue: ${issue.title}\n\n${issue.description ?? ""}`,
+      input: request.body.input ?? `Execute issue: ${issue.title}\n\n${issue.description ?? ""}`,
+      projectPath: issue.projectId
+        ? (await db.project.findUnique({ where: { id: issue.projectId } }))?.path
+        : undefined,
     });
 
     return { jobId };

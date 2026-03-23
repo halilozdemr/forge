@@ -3,14 +3,23 @@ import { createRunner } from "./runners/factory.js";
 import { BudgetGate } from "./budget-gate.js";
 import { createChildLogger } from "../utils/logger.js";
 import type { AgentJobData } from "./queue.js";
+import { claimNextJob, renewJobLease } from "./queue.js";
 import { addSyncEvent } from "../sync/worker.js";
 import { resolveWorkspace, cleanWorkspace } from "./workspace.js";
 import { updateSessionUsage, shouldRotate, rotateSession } from "./session.js";
 import { decrypt, redactSecrets } from "../utils/crypto.js";
 import { emit } from "../events/emitter.js";
+import { PipelineDispatcher } from "../orchestrator/dispatcher.js";
 
 
 const log = createChildLogger("worker");
+const LEASE_MS = 30_000;
+const LEASE_RENEW_MS = 10_000;
+const WORKER_ID = `worker-${process.pid}`;
+const LIVE_SUMMARY_MAX_CHARS = 1600;
+const LIVE_SUMMARY_FLUSH_MS = 1500;
+const LIVE_SUMMARY_MIN_CHARS = 120;
+const ANSI_ESCAPE_PATTERN = /\u001b\[[0-9;]*m/g;
 
 let isRunning = false;
 let pollingTimer: NodeJS.Timeout | null = null;
@@ -23,22 +32,9 @@ export function createAgentWorker(concurrency = 3): any {
   
   pollingTimer = setInterval(async () => {
     if (activeJobs >= concurrency) return;
-    
-    // Atomic claim
-    const db = getDb();
-    
+
     try {
-      const job = await db.$transaction(async (tx) => {
-        const pending = await tx.queueJob.findFirst({
-          where: { status: "pending", scheduledAt: { lte: new Date() } },
-          orderBy: { scheduledAt: "asc" },
-        });
-        if (!pending) return null;
-        return tx.queueJob.update({
-          where: { id: pending.id },
-          data: { status: "running", startedAt: new Date(), attempts: { increment: 1 } },
-        });
-      });
+      const job = await claimNextJob(WORKER_ID, LEASE_MS);
 
       if (job) {
         activeJobs++;
@@ -61,9 +57,40 @@ export function createAgentWorker(concurrency = 3): any {
   };
 }
 
+function sanitizeStreamChunk(chunk: string): string {
+  return chunk.replace(ANSI_ESCAPE_PATTERN, "").replace(/\r/g, "");
+}
+
+function appendLiveBuffer(buffer: string, chunk: string): string {
+  const next = `${buffer}${chunk}`;
+  return next.length > LIVE_SUMMARY_MAX_CHARS
+    ? next.slice(next.length - LIVE_SUMMARY_MAX_CHARS)
+    : next;
+}
+
+function resolveAgentTimeoutMs(agentSlug: string, requestedTimeoutMs?: number): number {
+  if (requestedTimeoutMs) return requestedTimeoutMs;
+
+  switch (agentSlug) {
+    case "builder":
+    case "architect":
+    case "reviewer":
+    case "debugger":
+      return 20 * 60 * 1000;
+    case "devops":
+    case "pm":
+    case "designer":
+    case "scrum_master":
+      return 10 * 60 * 1000;
+    default:
+      return 7 * 60 * 1000;
+  }
+}
+
 async function processJob(job: any): Promise<void> {
   const db = getDb();
   const budgetGate = new BudgetGate(db);
+  const dispatcher = new PipelineDispatcher(db);
   const data: AgentJobData = JSON.parse(job.payload);
   const { companyId, agentSlug, modelProvider, agentModel, systemPrompt, input, permissions, adapterConfig, projectPath, issueId, sessionId, timeoutMs } = data;
 
@@ -90,6 +117,11 @@ async function processJob(job: any): Promise<void> {
   log.info({ jobId: job.id, agent: agentSlug }, "Processing job");
   emit({ type: "queue.job.started", jobId: job.id, agentSlug });
 
+  const leaseTimer = setInterval(() => {
+    renewJobLease(job.id, WORKER_ID, LEASE_MS).catch((err) => {
+      log.warn({ jobId: job.id, err: (err as Error).message }, "Failed to renew queue job lease");
+    });
+  }, LEASE_RENEW_MS);
 
   try {
     const budgetCheck = await budgetGate.check(companyId, agentSlug);
@@ -114,12 +146,45 @@ async function processJob(job: any): Promise<void> {
       addSyncEvent('issue.updated', { issueId, status: "in_progress", companyId });
     }
 
+    if (data.pipelineStepRunId) {
+      await dispatcher.markStepStarted(data.pipelineStepRunId);
+    }
+
     let effectiveProjectPath = projectPath;
     if (issueId) {
       effectiveProjectPath = await resolveWorkspace(issueId, companyId, agentSlug);
     }
 
     const runner = createRunner(modelProvider);
+    let liveBuffer = "";
+    let pendingLineBuffer = "";
+    let lastLiveFlushAt = 0;
+    let liveBufferDirty = false;
+    let liveFlushPromise: Promise<void> | null = null;
+
+    const flushLiveSummary = async (force = false) => {
+      if (!data.pipelineStepRunId || !issueId || !liveBufferDirty) return;
+
+      const now = Date.now();
+      if (!force) {
+        if ((now - lastLiveFlushAt) < LIVE_SUMMARY_FLUSH_MS) return;
+        if (liveBuffer.length < LIVE_SUMMARY_MIN_CHARS) return;
+      }
+
+      const excerpt = liveBuffer.trim();
+      if (!excerpt) return;
+
+      lastLiveFlushAt = now;
+      liveBufferDirty = false;
+
+      await db.pipelineStepRun.update({
+        where: { id: data.pipelineStepRunId },
+        data: { resultSummary: excerpt },
+      });
+
+      emit({ type: "issue.updated", issueId, status: "in_progress" });
+    };
+
     const result = await runner.run({
       projectPath: effectiveProjectPath,
       agentSlug,
@@ -130,13 +195,44 @@ async function processJob(job: any): Promise<void> {
       adapterConfig,
       env: secrets, // Inject secrets as environment variables
       sessionId,
-      timeoutMs,
+      timeoutMs: resolveAgentTimeoutMs(agentSlug, timeoutMs),
       onStream: (chunk) => {
-        // Redact stream output
         const redacted = redactSecrets(chunk, secrets);
-        // Worker-specific stream handling can be added here if needed (e.g. WebSocket)
+        const sanitized = sanitizeStreamChunk(redacted);
+        if (!sanitized) return;
+
+        pendingLineBuffer = `${pendingLineBuffer}${sanitized}`;
+        const lines = pendingLineBuffer.split("\n");
+        pendingLineBuffer = lines.pop() ?? "";
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+          emit({ type: "heartbeat.log", agentSlug, line: trimmed });
+          liveBuffer = appendLiveBuffer(liveBuffer, `${trimmed}\n`);
+          liveBufferDirty = true;
+        }
+
+        if (pendingLineBuffer.trim()) {
+          liveBuffer = appendLiveBuffer(liveBuffer, pendingLineBuffer.trim());
+          liveBufferDirty = true;
+        }
+
+        if (!liveFlushPromise) {
+          liveFlushPromise = flushLiveSummary().finally(() => {
+            liveFlushPromise = null;
+          });
+        }
       }
     });
+
+    if (pendingLineBuffer.trim()) {
+      emit({ type: "heartbeat.log", agentSlug, line: pendingLineBuffer.trim() });
+      liveBuffer = appendLiveBuffer(liveBuffer, `${pendingLineBuffer.trim()}\n`);
+      liveBufferDirty = true;
+    }
+
+    await flushLiveSummary(true);
 
     if (result.tokenUsage) {
       const costUsd = estimateCost(modelProvider, agentModel, result.tokenUsage.input, result.tokenUsage.output);
@@ -181,7 +277,7 @@ async function processJob(job: any): Promise<void> {
       }
     }
 
-    if (issueId) {
+    if (issueId && !data.pipelineStepRunId) {
       const finalStatus = result.success ? "done" : "failed";
       await db.issue.update({
         where: { id: issueId },
@@ -203,6 +299,7 @@ async function processJob(job: any): Promise<void> {
         result: result.success ? JSON.stringify({ output: result.output?.slice(0, 10000) }) : undefined,
         error: result.error || null,
         completedAt: new Date(),
+        leaseExpiresAt: null,
       },
     });
 
@@ -266,7 +363,16 @@ async function processJob(job: any): Promise<void> {
       throw new Error(result.error || "Agent execution failed");
     }
 
-    if (data.nextAction) {
+    if (data.pipelineStepRunId) {
+      await dispatcher.handleStepSuccess(data.pipelineStepRunId, result.output || "");
+
+      if (data.pipelineRunId && issueId) {
+        const pipeline = await dispatcher.getPipeline(data.pipelineRunId);
+        if (pipeline && ["completed", "failed", "cancelled"].includes(pipeline.status)) {
+          await cleanWorkspace(issueId);
+        }
+      }
+    } else if (data.nextAction) {
       const { getQueue } = await import("./queue.js");
       const queue = getQueue();
       const nextAgent = await db.agent.findUnique({
@@ -302,13 +408,24 @@ async function processJob(job: any): Promise<void> {
         status: isRetryable ? "pending" : "failed",
         error: err.message,
         scheduledAt: isRetryable ? new Date(Date.now() + Math.pow(2, job.attempts) * 1000) : job.scheduledAt,
+        leaseExpiresAt: null,
       }
     });
 
     emit({ type: "queue.job.completed", jobId: job.id, success: false });
 
+    if (data.pipelineStepRunId) {
+      await dispatcher.handleStepFailure(data.pipelineStepRunId, err.message, isRetryable);
 
-    if (!isRetryable && issueId) {
+      if (!isRetryable && data.pipelineRunId && issueId) {
+        const pipeline = await dispatcher.getPipeline(data.pipelineRunId);
+        if (pipeline && ["completed", "failed", "cancelled"].includes(pipeline.status)) {
+          await cleanWorkspace(issueId);
+        }
+      }
+    }
+
+    if (!data.pipelineStepRunId && !isRetryable && issueId) {
       await db.issue.update({
         where: { id: issueId },
         data: {
@@ -320,7 +437,8 @@ async function processJob(job: any): Promise<void> {
       });
     }
   } finally {
-    if (issueId) {
+    clearInterval(leaseTimer);
+    if (issueId && !data.pipelineStepRunId) {
       await cleanWorkspace(issueId);
     }
   }

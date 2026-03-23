@@ -6,7 +6,7 @@ import type { AgentRunner, AgentRunnerConfig, AgentResult } from "./types.js";
 
 const log = createChildLogger("claude-cli");
 
-const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+const DEFAULT_TIMEOUT_MS = 20 * 60 * 1000; // 20 minutes
 const UUID_SESSION_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function isUuidSessionId(sessionId: string): boolean {

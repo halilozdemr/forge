@@ -8,10 +8,14 @@ const { mockDb, transitionAgentMock } = vi.hoisted(() => ({
       findUnique: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
+      delete: vi.fn(),
     },
     agentConfigRevision: {
       findFirst: vi.fn(),
       create: vi.fn(),
+    },
+    project: {
+      findFirst: vi.fn(),
     },
     activityLog: {
       create: vi.fn(),
@@ -43,6 +47,7 @@ describe("agentRoutes PUT /agents/:slug", () => {
     mockDb.agent.update.mockResolvedValue(undefined);
     mockDb.agentConfigRevision.findFirst.mockResolvedValue({ revision: 3 });
     mockDb.agentConfigRevision.create.mockResolvedValue(undefined);
+    mockDb.project.findFirst.mockResolvedValue(null);
     mockDb.agent.findUnique.mockResolvedValue({
       id: "agent-1",
       companyId: "company-1",
@@ -55,6 +60,7 @@ describe("agentRoutes PUT /agents/:slug", () => {
       reportsTo: null,
       status: "idle",
       permissions: "{}",
+      clientConfig: "{}",
       adapterConfig: "{}",
       maxConcurrent: 1,
       heartbeatCron: null,
@@ -106,7 +112,7 @@ describe("agentRoutes PUT /agents/:slug", () => {
     await app.close();
   });
 
-  it("updates only supported fields and ignores MCP-only extras", async () => {
+  it("updates validated fields and persists client config", async () => {
     const app = await buildServer();
 
     const res = await app.inject({
@@ -133,6 +139,7 @@ describe("agentRoutes PUT /agents/:slug", () => {
         modelProvider: "claude-cli",
         model: "sonnet",
         promptFile: null,
+        clientConfig: JSON.stringify({ some: "value" }),
       },
     });
     expect(mockDb.activityLog.create).toHaveBeenCalledWith(
@@ -140,7 +147,7 @@ describe("agentRoutes PUT /agents/:slug", () => {
         data: expect.objectContaining({
           action: "agent.updated",
           metadata: JSON.stringify({
-            fields: ["name", "role", "modelProvider", "model", "promptFile"],
+            fields: ["name", "role", "modelProvider", "model", "promptFile", "clientConfig"],
             changeNote: "updated from bridge",
           }),
         }),

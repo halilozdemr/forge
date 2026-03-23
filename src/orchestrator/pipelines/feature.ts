@@ -2,7 +2,7 @@ import type { PipelineStep } from "../index.js";
 
 /**
  * Feature pipeline:
- * CEO → PM → DevOps(branch) → Architect → Engineer → Reviewer → DevOps(commit) → Scrum-Master
+ * Approved brief → PM → DevOps(branch) → Architect → Builder → Reviewer → DevOps(merge) → Scrum-Master
  */
 export function buildFeaturePipeline(opts: {
   issueId: string;
@@ -13,44 +13,46 @@ export function buildFeaturePipeline(opts: {
 
   return [
     {
-      agentSlug: "ceo",
-      input: `New feature request received.\n\n${context}\n\nReview the request, write a brief spec, and hand off to the PM.`,
+      key: "pm",
+      agentSlug: "pm",
+      input: `Feature brief already approved by the client.\n\n${context}\n\nDecompose the work into actionable sub-tasks, estimate complexity, and prepare the execution plan for implementation.`,
       dependsOn: [],
     },
     {
-      agentSlug: "pm",
-      input: `Feature spec approved by CEO.\n\n${context}\n\nDecompose into sub-tasks, estimate complexity, and hand off to the architect for technical design.`,
-      dependsOn: ["ceo"],
-    },
-    {
+      key: "devops-branch",
       agentSlug: "devops",
-      input: `PM has decomposed the feature.\n\n${context}\n\nCreate a new feature branch following GitFlow conventions (feature/<slug>).`,
+      input: `PM planning is complete.\n\n${context}\n\nCreate a new feature branch following GitFlow conventions (feature/<slug>) and prepare the workspace for implementation.`,
       dependsOn: ["pm"],
     },
     {
+      key: "architect",
       agentSlug: "architect",
       input: `Feature branch created.\n\n${context}\n\nDesign the technical architecture, choose patterns, write the implementation plan in .forge/memory/decisions.md.`,
-      dependsOn: ["devops"],
+      dependsOn: ["devops-branch"],
     },
     {
-      agentSlug: "engineer",
+      key: "builder",
+      agentSlug: "builder",
       input: `Architecture plan ready.\n\n${context}\n\nImplement the feature following the architect's plan. Write tests. Follow conventions in .forge/context/conventions.md.`,
       dependsOn: ["architect"],
     },
     {
+      key: "reviewer",
       agentSlug: "reviewer",
-      input: `Engineer has completed implementation.\n\n${context}\n\nReview the code for quality, security, and adherence to standards in .forge/context/standards.md. Approve or request changes.`,
-      dependsOn: ["engineer"],
+      input: `Builder has completed implementation.\n\n${context}\n\nReview the code for quality, security, and adherence to standards in .forge/context/standards.md. Approve or request changes.`,
+      dependsOn: ["builder"],
     },
     {
+      key: "devops-merge",
       agentSlug: "devops",
       input: `Code review passed.\n\n${context}\n\nCommit the changes with a conventional commit message, then merge the feature branch.`,
       dependsOn: ["reviewer"],
     },
     {
-      agentSlug: "scrum-master",
+      key: "scrum_master",
+      agentSlug: "scrum_master",
       input: `Feature "${opts.title}" delivered.\n\n${context}\n\nUpdate the sprint backlog, mark the issue done, record any learnings in .forge/memory/patterns.md.`,
-      dependsOn: ["devops"],
+      dependsOn: ["devops-merge"],
     },
   ];
 }

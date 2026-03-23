@@ -4,7 +4,7 @@ import { createChildLogger } from "../../utils/logger.js";
 import type { AgentRunner, AgentRunnerConfig, AgentResult } from "./types.js";
 
 const log = createChildLogger("process-runner");
-const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000;
+const DEFAULT_TIMEOUT_MS = 20 * 60 * 1000;
 
 export class ProcessRunner implements AgentRunner {
   async run(config: AgentRunnerConfig): Promise<AgentResult> {

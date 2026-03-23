@@ -4,7 +4,21 @@ import { createChildLogger } from "../../utils/logger.js";
 import type { AgentRunner, AgentRunnerConfig, AgentResult } from "./types.js";
 
 const log = createChildLogger("opencode-cli");
-const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000;
+const DEFAULT_TIMEOUT_MS = 20 * 60 * 1000;
+
+function buildPrompt(config: AgentRunnerConfig): string {
+  if (!config.systemPrompt?.trim()) {
+    return config.input;
+  }
+
+  return [
+    "System instructions:",
+    config.systemPrompt.trim(),
+    "",
+    "User request:",
+    config.input,
+  ].join("\n");
+}
 
 export class OpenCodeCliRunner implements AgentRunner {
   async run(config: AgentRunnerConfig): Promise<AgentResult> {
@@ -15,7 +29,7 @@ export class OpenCodeCliRunner implements AgentRunner {
 
     return new Promise((resolve) => {
       try {
-        const args = ["run", "--print", config.input];
+        const args = ["run", "--print", buildPrompt(config)];
 
         const proc = spawn("opencode", args, {
           cwd: config.projectPath,
@@ -28,6 +42,7 @@ export class OpenCodeCliRunner implements AgentRunner {
         const timer = setTimeout(() => {
           timedOut = true;
           proc.kill("SIGTERM");
+          log.warn({ agent: config.agentSlug }, `OpenCode CLI timed out after ${timeoutMs / 1000}s`);
         }, timeoutMs);
 
         Promise.all([
@@ -41,7 +56,7 @@ export class OpenCodeCliRunner implements AgentRunner {
             if (timedOut) {
               resolve({
                 success: false,
-                error: `OpenCode CLI timed out`,
+                error: `OpenCode CLI timed out after ${timeoutMs / 1000}s`,
                 durationMs,
                 provider: "opencode-cli",
               });

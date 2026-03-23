@@ -14,7 +14,7 @@ import { createAgentWorker, closeWorker } from "../../bridge/worker.js";
 import { getQueue, closeQueue } from "../../bridge/queue.js";
 import { startHeartbeatScheduler, stopHeartbeatScheduler } from "../../heartbeat/scheduler.js";
 import { startSyncWorker, stopSyncWorker } from "../../sync/worker.js";
-import { syncProjectOpenCodeConfig } from "../../opencode/project-config.js";
+import { syncProjectOpenCodeConfig, syncProjectClientProjectionsFromRegistry } from "../../opencode/project-config.js";
 
 const log = createChildLogger("start");
 
@@ -95,7 +95,12 @@ async function runStart(opts: {
 
   try {
     const db = getDb();
-    await seedDatabase(db, seedOptions);
+    const seeded = await seedDatabase(db, seedOptions);
+    await syncProjectClientProjectionsFromRegistry({
+      db,
+      companyId: seeded.companyId,
+      projectPath: seedOptions.projectPath,
+    });
   } catch (err) {
     log.warn({ err }, "Failed to seed database — continuing");
   }
