@@ -52,7 +52,9 @@ export async function issueRoutes(server: FastifyInstance) {
       parentIssueId?: string;
     };
   }>("/issues", async (request) => {
-    const issue = await db.issue.create({ data: request.body });
+    // Strip fields that aren't on the Issue model (companyId comes from Project relation)
+    const { companyId, ...issueData } = request.body as Record<string, unknown>;
+    const issue = await db.issue.create({ data: issueData as any });
 
     // Log activity
     const project = await db.project.findUnique({ where: { id: request.body.projectId } });
@@ -63,7 +65,7 @@ export async function issueRoutes(server: FastifyInstance) {
           actor: "user",
           action: "issue.created",
           resource: `issue:${issue.id}`,
-          metadata: { title: issue.title, type: issue.type },
+          metadata: JSON.stringify({ title: issue.title, type: issue.type }),
         },
       });
     }
@@ -110,7 +112,7 @@ export async function issueRoutes(server: FastifyInstance) {
       data: {
         ...(status !== undefined && { status }),
         ...(result !== undefined && { result }),
-        ...(metadata !== undefined && { metadata: metadata as any }),
+        ...(metadata !== undefined && { metadata: JSON.stringify(metadata) }),
         ...(assignedAgentId !== undefined && {
           assignedAgent: assignedAgentId
             ? { connect: { id: assignedAgentId } }
@@ -123,5 +125,91 @@ export async function issueRoutes(server: FastifyInstance) {
     });
 
     return { issue };
+  });
+
+  // POST /v1/issues/:id/run
+  server.post<{
+    Params: { id: string };
+    Body: { companyId: string; agentSlug?: string };
+  }>("/issues/:id/run", async (request, reply) => {
+    const issue = await db.issue.findUnique({
+      where: { id: request.params.id },
+      include: { assignedAgent: true },
+    });
+    if (!issue) return reply.code(404).send({ error: "Issue not found" });
+
+    const agentSlug = request.body.agentSlug ?? issue.assignedAgent?.slug;
+    if (!agentSlug) {
+      return reply.code(400).send({ error: "No agent assigned to issue and no override provided." });
+    }
+
+    const agent = await db.agent.findFirst({
+      where: { companyId: request.body.companyId, slug: agentSlug }
+    });
+    if (!agent) {
+      return reply.code(404).send({ error: "Agent not found" });
+    }
+
+    const { enqueueAgentJob } = await import("../../bridge/queue.js");
+    const jobId = await enqueueAgentJob({
+      companyId: request.body.companyId,
+      agentSlug: agent.slug,
+      agentId: agent.id,
+      issueId: issue.id,
+      input: `Execute issue: ${issue.title}\n\n${issue.description ?? ""}`,
+    });
+
+    return { jobId };
+  });
+
+  // GET /v1/issues/:id/comments
+  server.get<{ Params: { id: string } }>("/issues/:id/comments", async (request, reply) => {
+    const comments = await db.issueComment.findMany({
+      where: { issueId: request.params.id },
+      orderBy: { createdAt: "asc" },
+    });
+    return { comments };
+  });
+
+  // POST /v1/issues/:id/comments
+  server.post<{
+    Params: { id: string };
+    Body: { authorSlug: string; content: string };
+  }>("/issues/:id/comments", async (request, reply) => {
+    const comment = await db.issueComment.create({
+      data: {
+        issueId: request.params.id,
+        authorSlug: request.body.authorSlug,
+        content: request.body.content,
+      },
+    });
+    return { comment };
+  });
+
+  // GET /v1/issues/:id/work-products
+  server.get<{ Params: { id: string } }>("/issues/:id/work-products", async (request, reply) => {
+    const workProducts = await db.issueWorkProduct.findMany({
+      where: { issueId: request.params.id },
+      orderBy: { createdAt: "desc" },
+    });
+    return { workProducts };
+  });
+
+  // POST /v1/issues/:id/work-products
+  server.post<{
+    Params: { id: string };
+    Body: { agentSlug: string; type: string; title: string; content: string; filePath?: string };
+  }>("/issues/:id/work-products", async (request, reply) => {
+    const workProduct = await db.issueWorkProduct.create({
+      data: {
+        issueId: request.params.id,
+        agentSlug: request.body.agentSlug,
+        type: request.body.type,
+        title: request.body.title,
+        content: request.body.content,
+        filePath: request.body.filePath,
+      },
+    });
+    return { workProduct };
   });
 }

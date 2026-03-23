@@ -50,4 +50,19 @@ export async function select<T extends string>(opts: {
   return result as T;
 }
 
+export async function multiselect<T extends string>(opts: {
+  message: string;
+  options: Array<{ value: T; label: string; hint?: string }>;
+  required?: boolean;
+  initialValues?: T[];
+}): Promise<T[]> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const result = await p.multiselect(opts as any);
+  if (p.isCancel(result)) {
+    p.cancel("Cancelled.");
+    process.exit(0);
+  }
+  return result as T[];
+}
+
 export { p };

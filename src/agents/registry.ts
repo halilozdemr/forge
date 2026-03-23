@@ -1,6 +1,7 @@
 import type { PrismaClient, Agent } from "@prisma/client";
 import { loadBuiltinAgents, type AgentDefinition } from "./loader.js";
 import { createChildLogger } from "../utils/logger.js";
+import { decrypt } from "../utils/crypto.js";
 
 const log = createChildLogger("agent-registry");
 
@@ -50,6 +51,23 @@ export class AgentRegistry {
     }
 
     // Fall back to built-in
-    return this.getBuiltinPrompt(agent.slug) || `You are the ${agent.name} at The Firm.`;
+    let prompt = this.getBuiltinPrompt(agent.slug) || `You are the ${agent.name} at The Firm.`;
+
+    // Resolve secrets
+    const companySecrets = await this.db.companySecret.findMany({
+      where: { companyId: agent.companyId }
+    });
+
+    for (const s of companySecrets) {
+      try {
+        const decrypted = decrypt(s.value);
+        const placeholder = new RegExp(`{{secrets\.${s.name}}}`, 'g');
+        prompt = prompt.replace(placeholder, decrypted);
+      } catch (e) {
+        log.warn({ secret: s.name }, "Failed to decrypt secret in registry");
+      }
+    }
+
+    return prompt;
   }
 }

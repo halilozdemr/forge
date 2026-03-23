@@ -9,6 +9,10 @@ const { mockDb, transitionAgentMock } = vi.hoisted(() => ({
       create: vi.fn(),
       update: vi.fn(),
     },
+    agentConfigRevision: {
+      findFirst: vi.fn(),
+      create: vi.fn(),
+    },
     activityLog: {
       create: vi.fn(),
     },
@@ -37,6 +41,8 @@ describe("agentRoutes PUT /agents/:slug", () => {
     vi.clearAllMocks();
 
     mockDb.agent.update.mockResolvedValue(undefined);
+    mockDb.agentConfigRevision.findFirst.mockResolvedValue({ revision: 3 });
+    mockDb.agentConfigRevision.create.mockResolvedValue(undefined);
     mockDb.agent.findUnique.mockResolvedValue({
       id: "agent-1",
       companyId: "company-1",
@@ -48,9 +54,13 @@ describe("agentRoutes PUT /agents/:slug", () => {
       promptFile: null,
       reportsTo: null,
       status: "idle",
-      permissions: {},
+      permissions: "{}",
+      adapterConfig: "{}",
       maxConcurrent: 1,
       heartbeatCron: null,
+      maxSessionRuns: 20,
+      maxSessionTokens: 100000,
+      maxSessionAgeHours: 24,
       createdAt: new Date(),
       updatedAt: new Date(),
     });
@@ -129,7 +139,7 @@ describe("agentRoutes PUT /agents/:slug", () => {
       expect.objectContaining({
         data: expect.objectContaining({
           action: "agent.updated",
-          metadata: expect.objectContaining({
+          metadata: JSON.stringify({
             fields: ["name", "role", "modelProvider", "model", "promptFile"],
             changeNote: "updated from bridge",
           }),

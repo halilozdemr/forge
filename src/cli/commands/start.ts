@@ -1,17 +1,20 @@
 import { Command } from "commander";
 import { existsSync, readFileSync } from "fs";
+import { mkdir } from "fs/promises";
 import { join } from "path";
+import { homedir } from "os";
 import { createChildLogger } from "../../utils/logger.js";
 import { loadConfig } from "../../utils/config.js";
 import { writePidFile, setupGracefulShutdown } from "../../utils/process.js";
 import { runMigrations } from "../../db/migrate.js";
 import { getDb, disconnectDb } from "../../db/client.js";
-import { seedDatabase } from "../../db/seed.js";
+import { seedDatabase, ProviderStrategy, CustomAgentDef } from "../../db/seed.js";
 import { createServer } from "../../server/index.js";
 import { createAgentWorker, closeWorker } from "../../bridge/worker.js";
 import { getQueue, closeQueue } from "../../bridge/queue.js";
 import { startHeartbeatScheduler, stopHeartbeatScheduler } from "../../heartbeat/scheduler.js";
-import Redis from "ioredis";
+import { startSyncWorker, stopSyncWorker } from "../../sync/worker.js";
+import { syncProjectOpenCodeConfig } from "../../opencode/project-config.js";
 
 const log = createChildLogger("start");
 
@@ -20,91 +23,111 @@ export function startCommand(): Command {
     .description("Start Forge server, worker and heartbeat scheduler")
     .option("--port <port>", "HTTP server port", "3131")
     .option("--concurrency <n>", "Worker concurrency", "3")
-    .option("--pg-url <url>", "PostgreSQL connection URL")
-    .option("--redis-url <url>", "Redis connection URL")
     .action(runStart);
 }
 
 async function runStart(opts: {
   port: string;
   concurrency: string;
-  pgUrl?: string;
-  redisUrl?: string;
 }): Promise<void> {
   const config = loadConfig({
     port: parseInt(opts.port, 10),
     concurrency: parseInt(opts.concurrency, 10),
-    ...(opts.pgUrl && { databaseUrl: opts.pgUrl }),
-    ...(opts.redisUrl && { redisUrl: opts.redisUrl }),
   });
-
-  if (!config.databaseUrl) {
-    log.error("DATABASE_URL is required. Set it in environment or pass --pg-url.");
-    process.exit(1);
-  }
 
   process.env.DATABASE_URL = config.databaseUrl;
 
   log.info("Starting Forge v3...");
 
+  // ~/.forge dizini oluştur
+  await mkdir(join(homedir(), ".forge"), { recursive: true });
+
   // 1. Run DB migrations
   await runMigrations();
 
-  // 2. Seed default company/agents if .forge/config.json exists
+  // 2. Seed default company/agents
   const forgeConfigPath = join(process.cwd(), ".forge", "config.json");
+  let seedOptions: {
+    companyName: string;
+    companySlug: string;
+    projectName: string;
+    projectPath: string;
+    stack: string;
+    providerStrategy?: ProviderStrategy;
+    customAgents?: CustomAgentDef[];
+    forceUpdate?: boolean;
+  } = {
+    companyName: "My Forge",
+    companySlug: "my-forge",
+    projectName: "default",
+    projectPath: process.cwd(),
+    stack: "other",
+  };
+
   if (existsSync(forgeConfigPath)) {
     try {
       const forgeConfig = JSON.parse(readFileSync(forgeConfigPath, "utf-8"));
-      const db = getDb();
-      await seedDatabase(db, {
-        companyName: forgeConfig.company?.name ?? "My Forge",
-        companySlug: forgeConfig.company?.slug ?? "my-forge",
-        projectName: forgeConfig.project?.name ?? "default",
-        projectPath: forgeConfig.project?.path ?? process.cwd(),
-        stack: forgeConfig.project?.stack ?? "other",
-      });
+      seedOptions = {
+        companyName: forgeConfig.company?.name ?? seedOptions.companyName,
+        companySlug: forgeConfig.company?.slug ?? seedOptions.companySlug,
+        projectName: forgeConfig.project?.name ?? seedOptions.projectName,
+        projectPath: forgeConfig.project?.path ?? seedOptions.projectPath,
+        stack: forgeConfig.project?.stack ?? seedOptions.stack,
+        providerStrategy: forgeConfig.agentStrategy,
+        customAgents: forgeConfig.agents,
+        forceUpdate: true,
+      };
+      // Load API keys from config into env if not already set
+      if (forgeConfig.providers?.openrouter?.apiKey && !process.env.OPENROUTER_API_KEY) {
+        process.env.OPENROUTER_API_KEY = forgeConfig.providers.openrouter.apiKey;
+      }
+      if (forgeConfig.providers?.anthropicApi?.apiKey && !process.env.ANTHROPIC_API_KEY) {
+        process.env.ANTHROPIC_API_KEY = forgeConfig.providers.anthropicApi.apiKey;
+      }
+
+      await syncProjectOpenCodeConfig(forgeConfig);
     } catch (err) {
-      log.warn({ err }, "Failed to seed from .forge/config.json — continuing");
+      log.warn({ err }, "Failed to read .forge/config.json — using defaults");
     }
+  } else {
+    log.info("No .forge/config.json found — seeding with defaults. Run `forge init` for customization.");
   }
 
-  // 3. Redis connection
-  const redis = new Redis(config.redisUrl, {
-    maxRetriesPerRequest: null,
-    lazyConnect: true,
-  });
+  try {
+    const db = getDb();
+    await seedDatabase(db, seedOptions);
+  } catch (err) {
+    log.warn({ err }, "Failed to seed database — continuing");
+  }
 
-  await redis.connect();
-  log.info("Redis connected");
-
-  const connection = { host: redis.options.host, port: redis.options.port as number };
-
-  // 4. BullMQ queue + worker
-  getQueue(connection);
-  const worker = createAgentWorker(connection, config.concurrency);
+  // 4. Queue + worker
+  getQueue();
+  const worker = createAgentWorker(config.concurrency);
   log.info(`Worker started (concurrency: ${config.concurrency})`);
 
   // 5. Heartbeat scheduler
-  await startHeartbeatScheduler(connection);
-  log.info("Heartbeat scheduler started");
+  await startHeartbeatScheduler();
 
-  // 6. HTTP server
+  // 6. Sync worker
+  await startSyncWorker();
+
+  // 7. HTTP server
   const server = await createServer(config.port, config.host);
 
-  // 7. PID file
+  // 8. PID file
   writePidFile();
 
   log.info(`Forge running on http://localhost:${config.port}`);
   log.info(`Claude CLI: ${config.claudePath}`);
 
-  // 8. Graceful shutdown
+  // 9. Graceful shutdown
   setupGracefulShutdown(async () => {
     log.info("Shutting down...");
     await server.close();
     await stopHeartbeatScheduler();
+    await stopSyncWorker();
     await closeWorker();
     await closeQueue();
-    await redis.quit();
     await disconnectDb();
   });
 }

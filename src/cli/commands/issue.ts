@@ -1,5 +1,6 @@
 import { Command } from "commander";
 import { loadConfig } from "../../utils/config.js";
+import { resolveCompany } from "../../utils/company.js";
 
 function baseUrl(): string {
   return `http://localhost:${loadConfig().port}`;
@@ -36,10 +37,11 @@ export function issueCommand(): Command {
     .option("--status <status>", "Filter by status")
     .option("--company <id>", "Company ID")
     .action(async (opts) => {
+      const companyId = await resolveCompany(opts.company);
       const params = new URLSearchParams();
       if (opts.project) params.set("projectId", opts.project);
       if (opts.status) params.set("status", opts.status);
-      if (opts.company) params.set("companyId", opts.company);
+      params.set("companyId", companyId);
 
       const { issues } = await api<{ issues: any[] }>(`/v1/issues?${params}`);
       if (!issues.length) {
@@ -88,8 +90,78 @@ export function issueCommand(): Command {
       console.log(`Priority: ${issue.priority}`);
       if (issue.assignedAgent) console.log(`Agent:    ${issue.assignedAgent.slug}`);
       if (issue.sprint) console.log(`Sprint:   #${issue.sprint.number} — ${issue.sprint.goal}`);
+      
+      const { labels } = await api<{ labels: any[] }>(`/v1/issues/${id}/labels`);
+      if (labels.length) {
+        console.log(`Labels:   ${labels.map((l) => l.name).join(", ")}`);
+      }
+
       if (issue.result) console.log(`\nResult:\n${issue.result.slice(0, 500)}`);
       console.log();
+    });
+
+  cmd
+    .command("run <id>")
+    .description("Execute an issue immediately")
+    .option("--company <id>", "Company ID")
+    .option("--agent <slug>", "Agent override")
+    .action(async (id, opts) => {
+      const companyId = await resolveCompany(opts.company);
+      const { jobId } = await api<{ jobId: string }>(`/v1/issues/${id}/run`, "POST", {
+        companyId,
+        agentSlug: opts.agent,
+      });
+      console.log(`Issue ${id} enqueued for execution. Job ID: ${jobId}`);
+      console.log(`Check status with: \x1b[1mnpx forge queue status --job ${jobId}\x1b[0m`);
+    });
+
+  cmd
+    .command("comments <id>")
+    .description("Show issue comments")
+    .action(async (id) => {
+      const { comments } = await api<{ comments: any[] }>(`/v1/issues/${id}/comments`);
+      if (!comments.length) {
+        console.log("No comments found.");
+        return;
+      }
+      console.log("\nComments\n" + "─".repeat(60));
+      for (const c of comments) {
+        const date = new Date(c.createdAt).toLocaleString();
+        console.log(`\x1b[1m${c.authorSlug}\x1b[0m [${date}]:`);
+        console.log(`${c.content}\n`);
+      }
+    });
+
+  cmd
+    .command("products <id>")
+    .description("Show issue work products")
+    .action(async (id) => {
+      const { workProducts } = await api<{ workProducts: any[] }>(`/v1/issues/${id}/work-products`);
+      if (!workProducts.length) {
+        console.log("No work products found.");
+        return;
+      }
+      console.log("\nWork Products\n" + "─".repeat(60));
+      for (const p of workProducts) {
+        const date = new Date(p.createdAt).toLocaleString();
+        console.log(`\x1b[1m${p.title}\x1b[0m (${p.type}) [${date}]:`);
+        if (p.filePath) console.log(`File: ${p.filePath}`);
+        console.log(`${p.content.slice(0, 1000)}${p.content.length > 1000 ? "..." : ""}\n`);
+        console.log("─".repeat(30));
+      }
+    });
+
+  cmd
+    .command("label <id> [labels...]")
+    .description("Sync labels for an issue")
+    .option("--company <id>", "Company ID")
+    .action(async (id, labelNames, opts) => {
+      const companyId = await resolveCompany(opts.company);
+      await api(`/v1/issues/${id}/labels`, "POST", {
+        companyId,
+        labelNames: labelNames || [],
+      });
+      console.log(`Labels synced for issue ${id}: ${labelNames?.join(", ") || "none"}`);
     });
 
   return cmd;

@@ -4,7 +4,7 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "sqlite"
   url      = env("DATABASE_URL")
 }
 
@@ -15,6 +15,7 @@ model Company {
   slug      String   @unique
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  requireApprovalForNewAgents Boolean @default(false)
 
   agents         Agent[]
   projects       Project[]
@@ -26,6 +27,11 @@ model Company {
   configEntries  ConfigEntry[]
   queueJobs      QueueJob[]
   heartbeatRuns  HeartbeatRun[]
+  scheduledJobs  ScheduledJob[]
+  goals          Goal[]
+  secrets        CompanySecret[]
+  approvals      Approval[]
+  labels         Label[]
 
   @@map("companies")
 }
@@ -37,7 +43,7 @@ model Project {
   name       String
   path       String
   stack      String  @default("other")
-  config     Json    @default("{}")
+  config     String  @default("{}")
   readmePath String?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
@@ -62,9 +68,13 @@ model Agent {
   promptFile    String?
   reportsTo     String?
   status        String  @default("idle")
-  permissions   Json    @default("{}")
+  permissions   String  @default("{}")
+  adapterConfig String  @default("{}")
   maxConcurrent Int     @default(1)
   heartbeatCron String?
+  maxSessionRuns   Int @default(20)
+  maxSessionTokens Int @default(100000)
+  maxSessionAgeHours Int @default(24)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
@@ -72,6 +82,8 @@ model Agent {
   apiKeys     AgentApiKey[]
   costEvents  CostEvent[]
   assignedIssues Issue[]   @relation("AssignedAgent")
+  runtimeState AgentRuntimeState?
+  revisions    AgentConfigRevision[]
 
   @@unique([companyId, slug])
   @@map("agents")
@@ -104,8 +116,12 @@ model Issue {
   priority        String  @default("normal")
   assignedAgentId String?
   parentIssueId   String?
+  goalId          String?
   result          String?
-  metadata        Json    @default("{}")
+  metadata        String  @default("{}")
+  executionLockedAt DateTime?
+  executionAgentSlug String?
+  executionJobId     String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -113,10 +129,15 @@ model Issue {
   sprint        Sprint?  @relation(fields: [sprintId], references: [id])
   assignedAgent Agent?   @relation("AssignedAgent", fields: [assignedAgentId], references: [id])
   parentIssue   Issue?   @relation("SubIssues", fields: [parentIssueId], references: [id])
+  goal          Goal?    @relation(fields: [goalId], references: [id])
   subIssues     Issue[]  @relation("SubIssues")
 
   skillExecutions SkillExecution[]
   queueJobs       QueueJob[]
+  executionWorkspace ExecutionWorkspace?
+  comments           IssueComment[]
+  workProducts       IssueWorkProduct[]
+  issueLabels        IssueLabel[]
 
   @@map("issues")
 }
@@ -150,7 +171,7 @@ model CostEvent {
   provider     String
   inputTokens  Int      @default(0)
   outputTokens Int      @default(0)
-  costUsd      Decimal  @default(0) @db.Decimal(10, 6)
+  costUsd      Float    @default(0)
   durationMs   Int      @default(0)
   createdAt    DateTime @default(now())
 
@@ -168,7 +189,7 @@ model BudgetPolicy {
   companyId       String
   scope           String  @default("company")
   scopeId         String?
-  monthlyLimitUsd Decimal @db.Decimal(10, 2)
+  monthlyLimitUsd Float
   softLimitPct    Int     @default(80)
   hardLimitPct    Int     @default(100)
   action          String  @default("warn")
@@ -239,7 +260,7 @@ model ActivityLog {
   actor     String
   action    String
   resource  String?
-  metadata  Json     @default("{}")
+  metadata  String   @default("{}")
   createdAt DateTime @default(now())
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
@@ -248,25 +269,28 @@ model ActivityLog {
   @@map("activity_logs")
 }
 
-// 13. Queue Jobs (BullMQ mirror)
+// 13. Queue Jobs (SQLite polling)
 model QueueJob {
   id          String    @id @default(cuid())
-  bullmqJobId String    @unique
   companyId   String
   agentSlug   String
   issueId     String?
-  status      String    @default("queued")
+  type        String    @default("agent_task")
+  payload     String    @default("{}")
+  status      String    @default("pending")
   attempts    Int       @default(0)
   maxAttempts Int       @default(3)
-  result      Json?
+  result      String?
   error       String?
-  queuedAt    DateTime  @default(now())
+  scheduledAt DateTime  @default(now())
   startedAt   DateTime?
   completedAt DateTime?
+  queuedAt    DateTime  @default(now())
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
   issue   Issue?  @relation(fields: [issueId], references: [id])
 
+  @@index([status, scheduledAt])
   @@index([companyId, status])
   @@map("queue_jobs")
 }
@@ -292,7 +316,7 @@ model ConfigEntry {
   id        String  @id @default(cuid())
   companyId String?
   key       String
-  value     Json
+  value     String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -300,4 +324,195 @@ model ConfigEntry {
 
   @@unique([companyId, key])
   @@map("config_entries")
+}
+
+// 16. Scheduled Jobs
+model ScheduledJob {
+  id             String    @id @default(cuid())
+  jobKey         String    @unique
+  companyId      String
+  agentSlug      String
+  cronExpression String
+  nextRunAt      DateTime
+  lastRunAt      DateTime?
+  enabled        Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([enabled, nextRunAt])
+  @@map("scheduled_jobs")
+}
+
+// 17. Sync Outbox
+model SyncOutbox {
+  id            String    @id @default(cuid())
+  eventType     String
+  payload       String
+  status        String    @default("pending")
+  attempts      Int       @default(0)
+  lastAttemptAt DateTime?
+  sentAt        DateTime?
+  createdAt     DateTime  @default(now())
+
+  @@index([status, createdAt])
+  @@map("sync_outbox")
+}
+
+// 18. Goals
+model Goal {
+  id             String  @id @default(cuid())
+  companyId      String
+  title          String
+  description    String?
+  level          String  @default("task")   // company | team | agent | task
+  status         String  @default("active") // active | completed | frozen
+  parentId       String?
+  ownerAgentSlug String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  company      Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  parent       Goal?   @relation("GoalHierarchy", fields: [parentId], references: [id])
+  children     Goal[]  @relation("GoalHierarchy")
+  linkedIssues Issue[]
+
+  @@index([companyId, level])
+  @@map("goals")
+}
+
+// 19. Execution Workspaces
+model ExecutionWorkspace {
+  id            String    @id @default(cuid())
+  issueId       String    @unique
+  agentSlug     String
+  policy        String    @default("shared")  // shared | per_task | git_worktree
+  workspacePath String
+  branchName    String?
+  status        String    @default("active")  // active | completed | cleaned
+  createdAt     DateTime  @default(now())
+  cleanedAt     DateTime?
+
+  issue Issue @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  @@map("execution_workspaces")
+}
+
+// 20. Agent Session Persistence
+model AgentRuntimeState {
+  id          String   @id @default(cuid())
+  agentId     String   @unique
+  sessionId   String?
+  tokenCount  Int      @default(0)
+  runCount    Int      @default(0)
+  lastUsedAt  DateTime @updatedAt
+
+  agent Agent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  @@map("agent_runtime_state")
+}
+
+model AgentTaskSession {
+  id         String    @id @default(cuid())
+  agentId    String
+  issueId    String
+  sessionId  String
+  tokenCount Int       @default(0)
+  createdAt  DateTime  @default(now())
+  closedAt   DateTime?
+
+  @@unique([agentId, issueId])
+  @@map("agent_task_sessions")
+}
+
+model AgentConfigRevision {
+  id         String   @id @default(cuid())
+  agentId    String
+  revision   Int
+  config     String   // JSON snapshot
+  changeNote String?
+  createdAt  DateTime @default(now())
+
+  agent Agent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@unique([agentId, revision])
+  @@map("agent_config_revisions")
+}
+
+// 21. Company Secrets
+model CompanySecret {
+  id          String   @id @default(cuid())
+  companyId   String
+  name        String
+  description String?
+  value       String   // AES-256 encrypted
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, name])
+  @@map("company_secrets")
+}
+
+model Approval {
+  id          String   @id @default(cuid())
+  companyId   String
+  type        String   // hire_agent | budget_override | ceo_strategy
+  status      String   @default("pending")  // pending | approved | rejected | cancelled
+  requestedBy String   // agent slug veya "user"
+  metadata    String   @default("{}")  // JSON — bağlam bilgisi
+  requestedAt DateTime @default(now())
+  reviewedAt  DateTime?
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  @@map("approvals")
+}
+
+model IssueComment {
+  id        String   @id @default(cuid())
+  issueId   String
+  authorSlug String  // agent slug veya "user"
+  content   String
+  createdAt DateTime @default(now())
+
+  issue Issue @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  @@map("issue_comments")
+}
+
+model IssueWorkProduct {
+  id        String   @id @default(cuid())
+  issueId   String
+  agentSlug String
+  type      String   // code | doc | test | pr | analysis
+  title     String
+  content   String
+  filePath  String?
+  createdAt DateTime @default(now())
+
+  issue Issue @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  @@map("issue_work_products")
+}
+
+model Label {
+  id        String @id @default(cuid())
+  companyId String
+  name      String
+  color     String @default("#6b7280")
+
+  company     Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  issueLabels IssueLabel[]
+
+  @@unique([companyId, name])
+  @@map("labels")
+}
+
+model IssueLabel {
+  issueId String
+  labelId String
+
+  issue Issue @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  label Label @relation(fields: [labelId], references: [id], onDelete: Cascade)
+
+  @@id([issueId, labelId])
+  @@map("issue_labels")
 }

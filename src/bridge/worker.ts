@@ -1,217 +1,351 @@
-import { Worker, type ConnectionOptions } from "bullmq";
 import { getDb } from "../db/client.js";
 import { createRunner } from "./runners/factory.js";
 import { BudgetGate } from "./budget-gate.js";
 import { createChildLogger } from "../utils/logger.js";
 import type { AgentJobData } from "./queue.js";
+import { addSyncEvent } from "../sync/worker.js";
+import { resolveWorkspace, cleanWorkspace } from "./workspace.js";
+import { updateSessionUsage, shouldRotate, rotateSession } from "./session.js";
+import { decrypt, redactSecrets } from "../utils/crypto.js";
+import { emit } from "../events/emitter.js";
+
 
 const log = createChildLogger("worker");
 
-let worker: Worker<AgentJobData> | null = null;
+let isRunning = false;
+let pollingTimer: NodeJS.Timeout | null = null;
+let activeJobs = 0;
 
-export function createAgentWorker(
-  connection: ConnectionOptions,
-  concurrency = 3,
-): Worker<AgentJobData> {
-  const db = getDb();
-  const budgetGate = new BudgetGate(db);
-
-  worker = new Worker<AgentJobData>(
-    "agent-tasks",
-    async (job) => {
-      const { companyId, agentSlug, modelProvider, agentModel, systemPrompt, input, permissions, projectPath, issueId, timeoutMs } = job.data;
-
-      log.info({ jobId: job.id, agent: agentSlug }, "Processing job");
-
-      // 1. Budget check
-      const budgetCheck = await budgetGate.check(companyId, agentSlug);
-      if (!budgetCheck.allowed) {
-        log.warn({ jobId: job.id, agent: agentSlug }, `Budget blocked: ${budgetCheck.reason}`);
-
-        // Pause agent
-        await db.agent.updateMany({
-          where: { companyId, slug: agentSlug },
-          data: { status: "paused" },
+export function createAgentWorker(concurrency = 3): any {
+  if (isRunning) return { close: async () => {}, isRunning: () => true, on: () => {} };
+  
+  isRunning = true;
+  
+  pollingTimer = setInterval(async () => {
+    if (activeJobs >= concurrency) return;
+    
+    // Atomic claim
+    const db = getDb();
+    
+    try {
+      const job = await db.$transaction(async (tx) => {
+        const pending = await tx.queueJob.findFirst({
+          where: { status: "pending", scheduledAt: { lte: new Date() } },
+          orderBy: { scheduledAt: "asc" },
         });
-
-        throw new Error(`Budget limit exceeded: ${budgetCheck.reason}`);
-      }
-
-      // 2. Update issue status
-      if (issueId) {
-        await db.issue.update({
-          where: { id: issueId },
-          data: { status: "in_progress" },
+        if (!pending) return null;
+        return tx.queueJob.update({
+          where: { id: pending.id },
+          data: { status: "running", startedAt: new Date(), attempts: { increment: 1 } },
         });
-      }
-
-      // 3. Mirror job in PostgreSQL
-      await db.queueJob.upsert({
-        where: { bullmqJobId: job.id! },
-        update: { status: "processing", startedAt: new Date(), attempts: job.attemptsMade },
-        create: {
-          bullmqJobId: job.id!,
-          companyId,
-          agentSlug,
-          issueId: issueId || null,
-          status: "processing",
-          startedAt: new Date(),
-          attempts: job.attemptsMade,
-        },
       });
 
-      // 4. Execute agent
-      const runner = createRunner(modelProvider);
-      const result = await runner.run({
-        projectPath,
-        agentSlug,
-        model: agentModel,
-        systemPrompt,
-        input,
-        permissions,
-        timeoutMs,
-      });
-
-      // 5. Record cost event
-      if (result.tokenUsage) {
-        const costUsd = estimateCost(modelProvider, agentModel, result.tokenUsage.input, result.tokenUsage.output);
-
-        const agent = await db.agent.findUnique({
-          where: { companyId_slug: { companyId, slug: agentSlug } },
-        });
-
-        if (agent) {
-          await db.costEvent.create({
-            data: {
-              companyId,
-              agentId: agent.id,
-              issueId: issueId || null,
-              model: agentModel,
-              provider: modelProvider,
-              inputTokens: result.tokenUsage.input,
-              outputTokens: result.tokenUsage.output,
-              costUsd,
-              durationMs: result.durationMs,
-            },
-          });
-        }
-      }
-
-      // 6. Update issue status
-      if (issueId) {
-        await db.issue.update({
-          where: { id: issueId },
-          data: {
-            status: result.success ? "done" : "failed",
-            result: result.output || result.error || null,
-          },
+      if (job) {
+        activeJobs++;
+        processJob(job).finally(() => {
+          activeJobs--;
         });
       }
+    } catch (e) {
+      log.error({ err: (e as Error).message }, "Error polling for queue jobs");
+    }
+  }, 1000);
 
-      // 7. Update queue job mirror
-      await db.queueJob.update({
-        where: { bullmqJobId: job.id! },
-        data: {
-          status: result.success ? "completed" : "failed",
-          result: result.success ? { output: result.output?.slice(0, 10000) } : undefined,
-          error: result.error || null,
-          completedAt: new Date(),
-        },
-      });
-
-      // 8. Log activity
-      await db.activityLog.create({
-        data: {
-          companyId,
-          actor: agentSlug,
-          action: result.success ? "agent.task.completed" : "agent.task.failed",
-          resource: issueId ? `issue:${issueId}` : undefined,
-          metadata: {
-            durationMs: result.durationMs,
-            provider: modelProvider,
-          },
-        },
-      });
-
-      if (!result.success) {
-        throw new Error(result.error || "Agent execution failed");
-      }
-
-      // 9. Chain next action if specified
-      if (job.data.nextAction) {
-        const { getQueue } = await import("./queue.js");
-        const queue = getQueue(connection);
-        const nextAgent = await db.agent.findUnique({
-          where: { companyId_slug: { companyId, slug: job.data.nextAction.agentSlug } },
-        });
-
-        if (nextAgent) {
-          await queue.add(`agent:${nextAgent.slug}`, {
-            companyId,
-            agentSlug: nextAgent.slug,
-            agentModel: nextAgent.model,
-            modelProvider: nextAgent.modelProvider,
-            systemPrompt: "", // loaded from agent defaults
-            input: job.data.nextAction.input,
-            permissions: nextAgent.permissions as Record<string, boolean>,
-            projectPath,
-            issueId,
-          });
-        }
-      }
-
-      return {
-        success: true,
-        output: result.output?.slice(0, 5000),
-        durationMs: result.durationMs,
-      };
+  return {
+    on: (event: string, cb: any) => {},
+    close: async () => {
+      isRunning = false;
+      if (pollingTimer) clearInterval(pollingTimer);
     },
-    {
-      connection,
-      concurrency,
-      limiter: { max: 10, duration: 60_000 },
-    },
-  );
-
-  worker.on("completed", (job) => {
-    log.info({ jobId: job.id, agent: job.data.agentSlug }, "Job completed");
-  });
-
-  worker.on("failed", (job, err) => {
-    log.error({ jobId: job?.id, agent: job?.data.agentSlug, error: err.message }, "Job failed");
-  });
-
-  worker.on("stalled", (jobId) => {
-    log.warn({ jobId }, "Job stalled — BullMQ will retry");
-  });
-
-  return worker;
+    isRunning: () => isRunning
+  };
 }
 
-export async function closeWorker(): Promise<void> {
-  if (worker) {
-    await worker.close();
-    worker = null;
+async function processJob(job: any): Promise<void> {
+  const db = getDb();
+  const budgetGate = new BudgetGate(db);
+  const data: AgentJobData = JSON.parse(job.payload);
+  const { companyId, agentSlug, modelProvider, agentModel, systemPrompt, input, permissions, adapterConfig, projectPath, issueId, sessionId, timeoutMs } = data;
+
+  // Fetch and decrypt secrets
+  const companySecrets = await db.companySecret.findMany({ where: { companyId } });
+  const secrets: Record<string, string> = {};
+  for (const s of companySecrets) {
+    try {
+      secrets[s.name] = decrypt(s.value);
+    } catch (e) {
+      log.warn({ secret: s.name }, "Failed to decrypt secret");
+    }
+  }
+
+  // Resolve placeholders in prompt and input
+  let effectiveSystemPrompt = systemPrompt;
+  let effectiveInput = input;
+  for (const [name, value] of Object.entries(secrets)) {
+    const placeholder = new RegExp(`{{secrets\.${name}}}`, 'g');
+    effectiveSystemPrompt = effectiveSystemPrompt.replace(placeholder, value);
+    effectiveInput = effectiveInput.replace(placeholder, value);
+  }
+
+  log.info({ jobId: job.id, agent: agentSlug }, "Processing job");
+  emit({ type: "queue.job.started", jobId: job.id, agentSlug });
+
+
+  try {
+    const budgetCheck = await budgetGate.check(companyId, agentSlug);
+    if (!budgetCheck.allowed) {
+      log.warn({ jobId: job.id, agent: agentSlug }, `Budget blocked: ${budgetCheck.reason}`);
+      await db.agent.updateMany({
+        where: { companyId, slug: agentSlug },
+        data: { status: "paused" },
+      });
+      const ag = await db.agent.findUnique({ where: { companyId_slug: { companyId, slug: agentSlug } } });
+      if (ag) {
+        addSyncEvent('agent.updated', { agentId: ag.id, status: "paused", companyId, slug: agentSlug, name: ag.name, role: ag.role });
+      }
+      throw new Error(`Budget limit exceeded: ${budgetCheck.reason}`);
+    }
+
+    if (issueId) {
+      await db.issue.update({
+        where: { id: issueId },
+        data: { status: "in_progress" },
+      });
+      addSyncEvent('issue.updated', { issueId, status: "in_progress", companyId });
+    }
+
+    let effectiveProjectPath = projectPath;
+    if (issueId) {
+      effectiveProjectPath = await resolveWorkspace(issueId, companyId, agentSlug);
+    }
+
+    const runner = createRunner(modelProvider);
+    const result = await runner.run({
+      projectPath: effectiveProjectPath,
+      agentSlug,
+      model: agentModel,
+      systemPrompt: effectiveSystemPrompt,
+      input: effectiveInput,
+      permissions,
+      adapterConfig,
+      env: secrets, // Inject secrets as environment variables
+      sessionId,
+      timeoutMs,
+      onStream: (chunk) => {
+        // Redact stream output
+        const redacted = redactSecrets(chunk, secrets);
+        // Worker-specific stream handling can be added here if needed (e.g. WebSocket)
+      }
+    });
+
+    if (result.tokenUsage) {
+      const costUsd = estimateCost(modelProvider, agentModel, result.tokenUsage.input, result.tokenUsage.output);
+      const agent = await db.agent.findUnique({
+        where: { companyId_slug: { companyId, slug: agentSlug } },
+      });
+      if (agent) {
+        await db.costEvent.create({
+          data: {
+            companyId,
+            agentId: agent.id,
+            issueId: issueId || null,
+            model: agentModel,
+            provider: modelProvider,
+            inputTokens: result.tokenUsage.input,
+            outputTokens: result.tokenUsage.output,
+            costUsd,
+            durationMs: result.durationMs,
+          },
+        });
+        
+        const now = new Date();
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+        const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+        const budgetRes = await db.costEvent.aggregate({
+          where: { companyId, createdAt: { gte: startOfMonth, lte: endOfMonth } },
+          _sum: { costUsd: true }
+        });
+        const monthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+        addSyncEvent('budget.updated', { companyId, month: monthStr, totalUsd: budgetRes._sum.costUsd || 0 });
+
+        // Phase 5: Session Usage and Rotation
+        await updateSessionUsage(agent.id, issueId || undefined, result.tokenUsage);
+        
+        const runtimeState = await db.agentRuntimeState.findUnique({ where: { agentId: agent.id } });
+        if (runtimeState && shouldRotate(runtimeState as any, agent)) {
+          const { handoffNote } = await rotateSession(agent.id, issueId || undefined);
+          if (handoffNote && data.nextAction) {
+            data.nextAction.input = handoffNote + "\n\n" + data.nextAction.input;
+          }
+        }
+      }
+    }
+
+    if (issueId) {
+      const finalStatus = result.success ? "done" : "failed";
+      await db.issue.update({
+        where: { id: issueId },
+        data: {
+          status: finalStatus,
+          result: result.output || result.error || null,
+          executionLockedAt: null,
+          executionAgentSlug: null,
+          executionJobId: null,
+        },
+      });
+      addSyncEvent('issue.updated', { issueId, status: finalStatus, companyId });
+    }
+
+    await db.queueJob.update({
+      where: { id: job.id },
+      data: {
+        status: result.success ? "completed" : "failed",
+        result: result.success ? JSON.stringify({ output: result.output?.slice(0, 10000) }) : undefined,
+        error: result.error || null,
+        completedAt: new Date(),
+      },
+    });
+
+    await db.activityLog.create({
+      data: {
+        companyId,
+        actor: agentSlug,
+        action: result.success ? "agent.task.completed" : "agent.task.failed",
+        resource: issueId ? `issue:${issueId}` : undefined,
+        metadata: JSON.stringify({
+          durationMs: result.durationMs,
+          provider: modelProvider,
+        }),
+      },
+    });
+
+    if (result.success && issueId) {
+      // Create work products
+      const output = result.output || "";
+      
+      // 1. Extract code blocks
+      const codeBlockRegex = /```(?:\w+)?\n([\s\S]*?)```/g;
+      let match;
+      while ((match = codeBlockRegex.exec(output)) !== null) {
+        const code = match[1].trim();
+        if (code) {
+          await db.issueWorkProduct.create({
+            data: {
+              issueId,
+              agentSlug,
+              type: "code",
+              title: "Generated Code",
+              content: code,
+            }
+          });
+        }
+      }
+
+      // 2. Analysis product (first 500 chars)
+      await db.issueWorkProduct.create({
+        data: {
+          issueId,
+          agentSlug,
+          type: "analysis",
+          title: "Execution Analysis",
+          content: output.slice(0, 500) + (output.length > 500 ? "..." : ""),
+        }
+      });
+
+      // 3. Completion comment
+      await db.issueComment.create({
+        data: {
+          issueId,
+          authorSlug: agentSlug,
+          content: `Agent ${agentSlug} completed the task.`,
+        }
+      });
+    }
+
+    if (!result.success) {
+      throw new Error(result.error || "Agent execution failed");
+    }
+
+    if (data.nextAction) {
+      const { getQueue } = await import("./queue.js");
+      const queue = getQueue();
+      const nextAgent = await db.agent.findUnique({
+        where: { companyId_slug: { companyId, slug: data.nextAction.agentSlug } },
+      });
+
+      if (nextAgent) {
+        await queue.add(`agent:${nextAgent.slug}`, {
+          companyId,
+          agentSlug: nextAgent.slug,
+          agentModel: nextAgent.model,
+          modelProvider: nextAgent.modelProvider,
+          systemPrompt: "",
+          input: data.nextAction.input,
+          permissions: JSON.parse(nextAgent.permissions) as Record<string, boolean>,
+          projectPath,
+          issueId,
+        });
+      }
+    }
+    
+    log.info({ jobId: job.id, agent: agentSlug }, "Job completed");
+    emit({ type: "queue.job.completed", jobId: job.id, success: true });
+
+
+  } catch (err: any) {
+    const redactedError = redactSecrets(err.message, secrets);
+    log.error({ jobId: job.id, agent: agentSlug, error: redactedError }, "Job failed");
+    const isRetryable = job.attempts < job.maxAttempts;
+    await db.queueJob.update({
+      where: { id: job.id },
+      data: {
+        status: isRetryable ? "pending" : "failed",
+        error: err.message,
+        scheduledAt: isRetryable ? new Date(Date.now() + Math.pow(2, job.attempts) * 1000) : job.scheduledAt,
+      }
+    });
+
+    emit({ type: "queue.job.completed", jobId: job.id, success: false });
+
+
+    if (!isRetryable && issueId) {
+      await db.issue.update({
+        where: { id: issueId },
+        data: {
+          status: "failed",
+          executionLockedAt: null,
+          executionAgentSlug: null,
+          executionJobId: null,
+        }
+      });
+    }
+  } finally {
+    if (issueId) {
+      await cleanWorkspace(issueId);
+    }
   }
 }
 
-/** Estimate cost in USD based on provider and token counts. */
-function estimateCost(provider: string, model: string, inputTokens: number, outputTokens: number): number {
-  // Claude CLI subscription = $0 (flat rate)
-  if (provider === "claude-cli") return 0;
+export async function closeWorker(): Promise<void> {
+  if (isRunning) {
+    if (pollingTimer) clearInterval(pollingTimer);
+    isRunning = false;
+  }
+}
 
-  // Anthropic API pricing (approximate)
+export function isWorkerRunning(): boolean {
+  return isRunning;
+}
+
+function estimateCost(provider: string, model: string, inputTokens: number, outputTokens: number): number {
+  if (provider === "claude-cli") return 0;
   if (provider === "anthropic-api") {
     if (model.includes("opus")) return (inputTokens * 15 + outputTokens * 75) / 1_000_000;
     if (model.includes("sonnet")) return (inputTokens * 3 + outputTokens * 15) / 1_000_000;
     if (model.includes("haiku")) return (inputTokens * 0.25 + outputTokens * 1.25) / 1_000_000;
   }
-
-  // OpenRouter — rough estimates
   if (provider === "openrouter") {
-    // Most models are cheaper
     return (inputTokens * 1 + outputTokens * 3) / 1_000_000;
   }
-
   return 0;
 }

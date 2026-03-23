@@ -1,6 +1,12 @@
 import Fastify from "fastify";
+import { existsSync } from "fs";
 import cors from "@fastify/cors";
+import fastifyStatic from "@fastify/static";
+import fastifyWebsocket from "@fastify/websocket";
+import path from "path";
+import { fileURLToPath } from "url";
 import { createChildLogger } from "../utils/logger.js";
+import { registerClient, unregisterClient } from "../events/emitter.js";
 import { healthRoutes } from "./routes/health.js";
 import { completionsRoutes } from "./routes/completions.js";
 import { bridgeRoutes } from "./routes/bridge.js";
@@ -10,6 +16,14 @@ import { sprintRoutes } from "./routes/sprints.js";
 import { queueRoutes } from "./routes/queue.js";
 import { budgetRoutes } from "./routes/budget.js";
 import { companyRoutes } from "./routes/companies.js";
+import { initRoutes } from "./routes/init.js";
+import { statusRoutes } from "./routes/status.js";
+import { secretRoutes } from "./routes/secrets.js";
+import { approvalRoutes } from "./routes/approvals.js";
+import { labelRoutes } from "./routes/labels.js";
+import { eventRoutes } from "./routes/events.js";
+import { exportRoutes } from "./routes/export.js";
+
 
 const log = createChildLogger("server");
 
@@ -19,6 +33,23 @@ export async function createServer(port = 3131, host = "0.0.0.0") {
   });
 
   await server.register(cors, { origin: true });
+  await server.register(fastifyWebsocket);
+
+  // WebSocket endpoint
+  server.get("/ws", { websocket: true }, (socket, req) => {
+    log.info("New WebSocket client connected");
+    registerClient(socket);
+
+    socket.on("close", () => {
+      log.info("WebSocket client disconnected");
+      unregisterClient(socket);
+    });
+
+    socket.on("error", (err: Error) => {
+      log.error({ err: err.message }, "WebSocket error");
+      unregisterClient(socket);
+    });
+  });
 
   // Register routes
   await server.register(healthRoutes);
@@ -30,6 +61,41 @@ export async function createServer(port = 3131, host = "0.0.0.0") {
   await server.register(queueRoutes, { prefix: "/v1" });
   await server.register(budgetRoutes, { prefix: "/v1" });
   await server.register(companyRoutes, { prefix: "/v1" });
+  await server.register(initRoutes, { prefix: "/v1" });
+  await server.register(statusRoutes, { prefix: "/v1" });
+  await server.register(secretRoutes, { prefix: "/v1" });
+  await server.register(approvalRoutes, { prefix: "/v1" });
+  await server.register(labelRoutes, { prefix: "/v1" });
+  await server.register(eventRoutes, { prefix: "/v1" });
+  await server.register(exportRoutes, { prefix: "/v1" });
+
+
+  const __filename = fileURLToPath(import.meta.url);
+  const __dirname = path.dirname(__filename);
+  
+  let webuiDistPath = path.join(__dirname, "../../webui/dist");
+  if (!existsSync(webuiDistPath)) {
+    // Try one more level up for production (dist/src/server -> webui/dist)
+    webuiDistPath = path.join(__dirname, "../../../webui/dist");
+  }
+
+  log.info(`Serving WebUI from: ${webuiDistPath}`);
+
+  await server.register(fastifyStatic, {
+    root: webuiDistPath,
+    prefix: "/",
+    wildcard: false, // Don't match everything here, we need the fallback below
+  });
+
+  // SPA fallback for hash-based router (optional but good practice)
+  // Even though it's hash-based, we want to serve index.html for unknown routes
+  server.setNotFoundHandler((request, reply) => {
+    if (request.url.startsWith("/v1") || request.url === "/health" || request.url === "/ws") {
+      reply.code(404).send({ error: "Not Found" });
+      return;
+    }
+    reply.sendFile("index.html");
+  });
 
   const address = await server.listen({ port, host });
   log.info(`Server listening on ${address}`);

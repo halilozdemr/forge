@@ -1,5 +1,7 @@
 import type { PrismaClient } from "@prisma/client";
 import { createChildLogger } from "../utils/logger.js";
+import { emit } from "../events/emitter.js";
+
 
 const log = createChildLogger("lifecycle");
 
@@ -48,6 +50,8 @@ export async function transitionAgent(
   });
 
   log.info({ slug, from: currentStatus, to: newStatus }, "Agent status changed");
+  emit({ type: "agent.status.changed", agentSlug: slug, status: newStatus });
+
 
   // Log activity
   await db.activityLog.create({
@@ -56,7 +60,7 @@ export async function transitionAgent(
       actor: "system",
       action: `agent.${newStatus}`,
       resource: `agent:${slug}`,
-      metadata: { from: currentStatus, to: newStatus },
+      metadata: JSON.stringify({ from: currentStatus, to: newStatus }),
     },
   });
 

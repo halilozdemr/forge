@@ -1,5 +1,6 @@
 import { Command } from "commander";
 import { loadConfig } from "../../utils/config.js";
+import { resolveCompany } from "../../utils/company.js";
 
 function baseUrl(): string {
   return `http://localhost:${loadConfig().port}`;
@@ -24,13 +25,14 @@ export function budgetCommand(): Command {
   cmd
     .command("set <limitUsd>")
     .description("Set monthly budget limit")
-    .requiredOption("--company <id>", "Company ID")
+    .option("--company <id>", "Company ID")
     .option("--agent <slug>", "Limit to specific agent slug")
     .option("--soft-pct <pct>", "Soft limit percentage (default: 80)", "80")
     .option("--action <action>", "Action on hard limit: warn|pause|block (default: pause)", "pause")
     .action(async (limitUsd, opts) => {
+      const companyId = await resolveCompany(opts.company);
       const body: Record<string, unknown> = {
-        companyId: opts.company,
+        companyId,
         monthlyLimitUsd: parseFloat(limitUsd),
         softLimitPct: parseInt(opts.softPct, 10),
         action: opts.action,
@@ -42,19 +44,20 @@ export function budgetCommand(): Command {
         body.scope = "company";
       }
       const { policy } = await api<{ policy: any }>("/v1/budget/policies", "POST", body);
-      const target = opts.agent ? `agent:${opts.agent}` : `company:${opts.company}`;
+      const target = opts.agent ? `agent:${opts.agent}` : `company:${companyId}`;
       console.log(`Budget set: $${policy.monthlyLimitUsd}/month for ${target} (soft: ${policy.softLimitPct}%, action: ${policy.action})`);
     });
 
   cmd
     .command("show")
     .description("Show current budget policies and usage")
-    .requiredOption("--company <id>", "Company ID")
+    .option("--company <id>", "Company ID")
     .action(async (opts) => {
-      const { policies, usage } = await api<{ policies: any[]; usage: any }>(`/v1/budget/usage?companyId=${opts.company}`);
+      const companyId = await resolveCompany(opts.company);
+      const { policies, usage } = await api<{ policies: any[]; usage: any }>(`/v1/budget/usage?companyId=${companyId}`);
 
       console.log("\nBudget Overview\n" + "─".repeat(60));
-      console.log(`Company:   ${opts.company}`);
+      console.log(`Company:   ${companyId}`);
       console.log(`This Month: $${Number(usage?.totalUsd ?? 0).toFixed(4)}`);
       console.log();
 
@@ -76,10 +79,11 @@ export function budgetCommand(): Command {
   cmd
     .command("report")
     .description("Show cost report by agent")
-    .requiredOption("--company <id>", "Company ID")
+    .option("--company <id>", "Company ID")
     .option("--month <yyyy-mm>", "Month to report (default: current)")
     .action(async (opts) => {
-      const params = new URLSearchParams({ companyId: opts.company });
+      const companyId = await resolveCompany(opts.company);
+      const params = new URLSearchParams({ companyId });
       if (opts.month) params.set("month", opts.month);
 
       const { events, summary } = await api<{ events: any[]; summary: any }>(`/v1/budget/report?${params}`);

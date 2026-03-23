@@ -5,7 +5,11 @@ export interface AgentRunnerConfig {
   systemPrompt: string;
   input: string;
   permissions: Record<string, boolean>;
+  adapterConfig?: Record<string, any>;
+  env?: Record<string, string>;
+  sessionId?: string;
   timeoutMs?: number;
+  onStream?: (chunk: string) => void;
 }
 
 export interface AgentResult {

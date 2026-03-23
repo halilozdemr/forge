@@ -66,6 +66,36 @@ export async function agentRoutes(server: FastifyInstance) {
       return reply.code(400).send({ error: "companyId, slug, name, and model are required" });
     }
 
+    // Check if company requires approval for new agents
+    const company = await db.company.findUnique({ where: { id: companyId } });
+    if (!company) return reply.code(404).send({ error: "Company not found" });
+
+    if (company.requireApprovalForNewAgents) {
+      const approval = await db.approval.create({
+        data: {
+          companyId,
+          type: "hire_agent",
+          status: "pending",
+          requestedBy: "user",
+          metadata: JSON.stringify({
+            slug,
+            name,
+            role: role || name,
+            modelProvider: modelProvider || "claude-cli",
+            model,
+            reportsTo: reportsTo || null,
+            permissions: permissions || {},
+            heartbeatCron: heartbeatCron || null,
+          }),
+        },
+      });
+
+      return reply.code(202).send({
+        message: "Agent hire request submitted for approval",
+        approvalId: approval.id,
+      });
+    }
+
     const agent = await db.agent.create({
       data: {
         companyId,
@@ -75,7 +105,7 @@ export async function agentRoutes(server: FastifyInstance) {
         modelProvider: modelProvider || "claude-cli",
         model,
         reportsTo: reportsTo || null,
-        permissions: permissions || {},
+        permissions: JSON.stringify(permissions || {}),
         heartbeatCron: heartbeatCron || null,
         status: "idle",
       },
@@ -108,12 +138,18 @@ export async function agentRoutes(server: FastifyInstance) {
     };
   }>("/agents/:slug", async (request, reply) => {
     const { slug } = request.params;
-    const { companyId, status } = request.body;
+    const { companyId, status, changeNote } = request.body;
 
     if (typeof companyId !== "string" || companyId.trim().length === 0) {
       return reply.code(400).send({ error: "companyId required" });
     }
     const normalizedCompanyId = companyId.trim();
+
+    const currentAgent = await db.agent.findUnique({
+      where: { companyId_slug: { companyId: normalizedCompanyId, slug } },
+    });
+
+    if (!currentAgent) return reply.code(404).send({ error: "Agent not found" });
 
     // Handle status transitions separately
     if (status) {
@@ -199,7 +235,7 @@ export async function agentRoutes(server: FastifyInstance) {
           return reply.code(400).send({ error: `permissions.${key} must be boolean` });
         }
       }
-      updates.permissions = permissions;
+      updates.permissions = JSON.stringify(permissions);
     }
 
     if (request.body.maxConcurrent !== undefined) {
@@ -209,8 +245,41 @@ export async function agentRoutes(server: FastifyInstance) {
       updates.maxConcurrent = request.body.maxConcurrent;
     }
 
-    // Apply other updates
     if (Object.keys(updates).length > 0) {
+      // Create revision snapshot of current state BEFORE applying updates
+      const lastRevision = await db.agentConfigRevision.findFirst({
+        where: { agentId: currentAgent.id },
+        orderBy: { revision: "desc" },
+      });
+
+      const nextRevision = (lastRevision?.revision ?? 0) + 1;
+
+      // Prepare snapshot config
+      const snapshot = {
+        name: currentAgent.name,
+        role: currentAgent.role,
+        modelProvider: currentAgent.modelProvider,
+        model: currentAgent.model,
+        promptFile: currentAgent.promptFile,
+        reportsTo: currentAgent.reportsTo,
+        permissions: currentAgent.permissions,
+        adapterConfig: currentAgent.adapterConfig,
+        heartbeatCron: currentAgent.heartbeatCron,
+        maxConcurrent: currentAgent.maxConcurrent,
+        maxSessionRuns: currentAgent.maxSessionRuns,
+        maxSessionTokens: currentAgent.maxSessionTokens,
+        maxSessionAgeHours: currentAgent.maxSessionAgeHours,
+      };
+
+      await db.agentConfigRevision.create({
+        data: {
+          agentId: currentAgent.id,
+          revision: nextRevision,
+          config: JSON.stringify(snapshot),
+          changeNote: changeNote || null,
+        },
+      });
+
       await db.agent.update({
         where: { companyId_slug: { companyId: normalizedCompanyId, slug } },
         data: updates,
@@ -222,10 +291,10 @@ export async function agentRoutes(server: FastifyInstance) {
           actor: "user",
           action: "agent.updated",
           resource: `agent:${slug}`,
-          metadata: {
+          metadata: JSON.stringify({
             fields: Object.keys(updates),
-            changeNote: request.body.changeNote || null,
-          },
+            changeNote: changeNote || null,
+          }),
         },
       });
     }
@@ -237,19 +306,114 @@ export async function agentRoutes(server: FastifyInstance) {
     return { agent };
   });
 
-  // DELETE /v1/agents/:slug (fire/terminate)
+  // GET /v1/agents/:slug/revisions
+  server.get<{ Params: { slug: string }; Querystring: { companyId: string } }>(
+    "/agents/:slug/revisions",
+    async (request, reply) => {
+      const { slug } = request.params;
+      const { companyId } = request.query;
+      if (!companyId) return reply.code(400).send({ error: "companyId required" });
+
+      const agent = await db.agent.findUnique({
+        where: { companyId_slug: { companyId, slug } },
+      });
+      if (!agent) return reply.code(404).send({ error: "Agent not found" });
+
+      const revisions = await db.agentConfigRevision.findMany({
+        where: { agentId: agent.id },
+        orderBy: { revision: "desc" },
+      });
+
+      return { revisions };
+    }
+  );
+
+  // PUT /v1/agents/:slug/rollback
+  server.put<{
+    Params: { slug: string };
+    Body: { companyId: string; revision: number };
+  }>("/agents/:slug/rollback", async (request, reply) => {
+    const { slug } = request.params;
+    const { companyId, revision } = request.body;
+
+    if (!companyId || !revision) {
+      return reply.code(400).send({ error: "companyId and revision are required" });
+    }
+
+    const agent = await db.agent.findUnique({
+      where: { companyId_slug: { companyId, slug } },
+    });
+    if (!agent) return reply.code(404).send({ error: "Agent not found" });
+
+    const targetRevision = await db.agentConfigRevision.findUnique({
+      where: { agentId_revision: { agentId: agent.id, revision } },
+    });
+
+    if (!targetRevision) {
+      return reply.code(404).send({ error: `Revision ${revision} not found` });
+    }
+
+    const config = JSON.parse(targetRevision.config);
+
+    // Create a revision of the current state before rolling back
+    const lastRevision = await db.agentConfigRevision.findFirst({
+      where: { agentId: agent.id },
+      orderBy: { revision: "desc" },
+    });
+
+    const nextRevision = (lastRevision?.revision ?? 0) + 1;
+    const currentSnapshot = {
+      name: agent.name,
+      role: agent.role,
+      modelProvider: agent.modelProvider,
+      model: agent.model,
+      promptFile: agent.promptFile,
+      reportsTo: agent.reportsTo,
+      permissions: agent.permissions,
+      adapterConfig: agent.adapterConfig,
+      heartbeatCron: agent.heartbeatCron,
+      maxConcurrent: agent.maxConcurrent,
+      maxSessionRuns: agent.maxSessionRuns,
+      maxSessionTokens: agent.maxSessionTokens,
+      maxSessionAgeHours: agent.maxSessionAgeHours,
+    };
+
+    await db.agentConfigRevision.create({
+      data: {
+        agentId: agent.id,
+        revision: nextRevision,
+        config: JSON.stringify(currentSnapshot),
+        changeNote: `Rollback to revision ${revision}`,
+      },
+    });
+
+    const updatedAgent = await db.agent.update({
+      where: { id: agent.id },
+      data: config,
+    });
+
+    return { agent: updatedAgent, message: `Rolled back to revision ${revision}` };
+  });
+
+  // DELETE /v1/agents/:slug (fire/delete)
   server.delete<{ Params: { slug: string }; Querystring: { companyId: string } }>("/agents/:slug", async (request, reply) => {
     const { slug } = request.params;
     const { companyId } = request.query;
 
     if (!companyId) return reply.code(400).send({ error: "companyId required" });
 
-    const result = await transitionAgent(db, companyId, slug, "terminated");
-    if (!result.success) {
-      return reply.code(400).send({ error: result.error });
-    }
+    const agent = await db.agent.findUnique({
+      where: { companyId_slug: { companyId, slug } },
+    });
+    if (!agent) return reply.code(404).send({ error: "Agent not found" });
 
-    return { message: `Agent "${slug}" terminated` };
+    await db.agent.delete({ where: { id: agent.id } });
+
+    await db.activityLog.create({
+      data: { companyId, actor: "user", action: "agent.deleted", resource: `agent:${slug}` },
+    });
+
+    return { message: `Agent "${slug}" deleted` };
   });
 
   // GET /v1/agents/hierarchy?companyId=xxx
