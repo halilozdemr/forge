@@ -45,7 +45,7 @@ export function createAgentWorker(concurrency = 3): any {
     } catch (e) {
       log.error({ err: (e as Error).message }, "Error polling for queue jobs");
     }
-  }, 1000);
+  }, 200);
 
   return {
     on: (event: string, cb: any) => {},
@@ -59,6 +59,36 @@ export function createAgentWorker(concurrency = 3): any {
 
 function sanitizeStreamChunk(chunk: string): string {
   return chunk.replace(ANSI_ESCAPE_PATTERN, "").replace(/\r/g, "");
+}
+
+/**
+ * Extract human-readable text from a stream-json line.
+ * If the line is a stream-json event, returns the text content.
+ * Otherwise returns the line as-is.
+ */
+function extractStreamJsonText(line: string): string | null {
+  if (!line.startsWith("{")) return line;
+  try {
+    const event = JSON.parse(line) as Record<string, unknown>;
+    // Skip non-content events
+    if (event.type === "result" || event.type === "system") return null;
+    // assistant message with text content
+    if (event.type === "assistant") {
+      const msg = event.message as Record<string, unknown> | undefined;
+      const content = msg?.content;
+      if (Array.isArray(content)) {
+        const texts = content
+          .filter((c: any) => c.type === "text")
+          .map((c: any) => c.text as string)
+          .join("");
+        return texts || null;
+      }
+    }
+    // tool_use or other structured events — skip
+    return null;
+  } catch {
+    return line;
+  }
 }
 
 function appendLiveBuffer(buffer: string, chunk: string): string {
@@ -76,14 +106,14 @@ function resolveAgentTimeoutMs(agentSlug: string, requestedTimeoutMs?: number): 
     case "architect":
     case "reviewer":
     case "debugger":
-      return 20 * 60 * 1000;
+      return 8 * 60 * 1000;
     case "devops":
     case "pm":
     case "designer":
     case "scrum_master":
-      return 10 * 60 * 1000;
+      return 4 * 60 * 1000;
     default:
-      return 7 * 60 * 1000;
+      return 3 * 60 * 1000;
   }
 }
 
@@ -208,9 +238,16 @@ async function processJob(job: any): Promise<void> {
         for (const line of lines) {
           const trimmed = line.trim();
           if (!trimmed) continue;
-          emit({ type: "heartbeat.log", agentSlug, line: trimmed });
-          liveBuffer = appendLiveBuffer(liveBuffer, `${trimmed}\n`);
-          liveBufferDirty = true;
+          const text = extractStreamJsonText(trimmed);
+          if (!text) continue;
+          // text may contain embedded newlines from assistant messages
+          for (const subLine of text.split("\n")) {
+            const t = subLine.trim();
+            if (!t) continue;
+            emit({ type: "heartbeat.log", agentSlug, line: t });
+            liveBuffer = appendLiveBuffer(liveBuffer, `${t}\n`);
+            liveBufferDirty = true;
+          }
         }
 
         if (pendingLineBuffer.trim()) {
@@ -227,9 +264,12 @@ async function processJob(job: any): Promise<void> {
     });
 
     if (pendingLineBuffer.trim()) {
-      emit({ type: "heartbeat.log", agentSlug, line: pendingLineBuffer.trim() });
-      liveBuffer = appendLiveBuffer(liveBuffer, `${pendingLineBuffer.trim()}\n`);
-      liveBufferDirty = true;
+      const text = extractStreamJsonText(pendingLineBuffer.trim());
+      if (text) {
+        emit({ type: "heartbeat.log", agentSlug, line: text });
+        liveBuffer = appendLiveBuffer(liveBuffer, `${text}\n`);
+        liveBufferDirty = true;
+      }
     }
 
     await flushLiveSummary(true);
