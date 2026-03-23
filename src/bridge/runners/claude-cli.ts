@@ -7,6 +7,11 @@ import type { AgentRunner, AgentRunnerConfig, AgentResult } from "./types.js";
 const log = createChildLogger("claude-cli");
 
 const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+const UUID_SESSION_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isUuidSessionId(sessionId: string): boolean {
+  return UUID_SESSION_ID_PATTERN.test(sessionId);
+}
 
 function resolveAllowedTools(permissions: Record<string, boolean>): string {
   const toolMap: Record<string, string[]> = {
@@ -54,8 +59,18 @@ export class ClaudeCliRunner implements AgentRunner {
           args.push("--system-prompt", config.systemPrompt);
         }
 
-        if (config.sessionId) {
-          args.push("-r", config.sessionId);
+        const resumableSessionId =
+          config.sessionId && isUuidSessionId(config.sessionId) ? config.sessionId : undefined;
+
+        if (config.sessionId && !resumableSessionId) {
+          log.warn(
+            { agent: config.agentSlug, sessionId: config.sessionId },
+            "Skipping Claude CLI resume because session ID is not a valid UUID",
+          );
+        }
+
+        if (resumableSessionId) {
+          args.push("-r", resumableSessionId);
         }
 
         const allowedTools = resolveAllowedTools(config.permissions);

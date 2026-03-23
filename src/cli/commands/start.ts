@@ -8,7 +8,7 @@ import { loadConfig } from "../../utils/config.js";
 import { writePidFile, setupGracefulShutdown } from "../../utils/process.js";
 import { runMigrations } from "../../db/migrate.js";
 import { getDb, disconnectDb } from "../../db/client.js";
-import { seedDatabase, ProviderStrategy } from "../../db/seed.js";
+import { seedDatabase, ProviderStrategy, CustomAgentDef } from "../../db/seed.js";
 import { createServer } from "../../server/index.js";
 import { createAgentWorker, closeWorker } from "../../bridge/worker.js";
 import { getQueue, closeQueue } from "../../bridge/queue.js";
@@ -53,6 +53,8 @@ async function runStart(opts: {
     projectPath: string;
     stack: string;
     providerStrategy?: ProviderStrategy;
+    customAgents?: CustomAgentDef[];
+    forceUpdate?: boolean;
   } = {
     companyName: "My Forge",
     companySlug: "my-forge",
@@ -71,6 +73,8 @@ async function runStart(opts: {
         projectPath: forgeConfig.project?.path ?? seedOptions.projectPath,
         stack: forgeConfig.project?.stack ?? seedOptions.stack,
         providerStrategy: forgeConfig.agentStrategy,
+        customAgents: forgeConfig.agents,
+        forceUpdate: true,
       };
       // Load API keys from config into env if not already set
       if (forgeConfig.providers?.openrouter?.apiKey && !process.env.OPENROUTER_API_KEY) {

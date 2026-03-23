@@ -806,7 +806,11 @@ async function runInit(opts: { yes?: boolean }): Promise<void> {
     // 8. Notify running server
     try {
       const config = loadConfig();
-      const res = await fetch(`http://localhost:${config.port}/v1/init`, { method: "POST" });
+      const res = await fetch(`http://localhost:${config.port}/v1/init`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ forceUpdate: true }),
+      });
       if (res.ok) p.log.success("Server synchronized.");
     } catch { /* server not running, that's fine */ }
 

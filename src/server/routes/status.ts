@@ -1,14 +1,33 @@
 import type { FastifyInstance } from "fastify";
 import { getDb } from "../../db/client.js";
+import { loadConfig } from "../../utils/config.js";
 
 export async function statusRoutes(server: FastifyInstance) {
-  // Context endpoint: returns the first company and project for WebUI auto-discovery
+  // Context endpoint: prefer the current project's configured path for WebUI auto-discovery.
   server.get("/context", async () => {
     const db = getDb();
+    const config = loadConfig();
+
+    const projectForCurrentPath = await db.project.findFirst({
+      where: { path: config.projectPath },
+      orderBy: { createdAt: "desc" },
+    });
+
+    if (projectForCurrentPath) {
+      const company = await db.company.findUnique({ where: { id: projectForCurrentPath.companyId } });
+      return {
+        companyId: company?.id ?? null,
+        companyName: company?.name ?? null,
+        projectId: projectForCurrentPath.id,
+        projectName: projectForCurrentPath.name,
+      };
+    }
+
     const company = await db.company.findFirst({ orderBy: { createdAt: "asc" } });
     if (!company) {
       return { companyId: null, companyName: null, projectId: null, projectName: null };
     }
+
     const project = await db.project.findFirst({ where: { companyId: company.id }, orderBy: { createdAt: "asc" } });
     return {
       companyId: company.id,

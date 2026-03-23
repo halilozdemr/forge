@@ -181,6 +181,7 @@ interface SeedOptions {
   stack: string;
   providerStrategy?: ProviderStrategy;
   customAgents?: CustomAgentDef[];
+  forceUpdate?: boolean;
 }
 
 export async function seedDatabase(db: PrismaClient, options: SeedOptions): Promise<{
@@ -224,7 +225,13 @@ export async function seedDatabase(db: PrismaClient, options: SeedOptions): Prom
 
       await db.agent.upsert({
         where: { companyId_slug: { companyId: company.id, slug: agentDef.slug } },
-        update: { promptFile },
+        update: options.forceUpdate
+          ? {
+              promptFile,
+              modelProvider: agentDef.modelProvider,
+              model: agentDef.model,
+            }
+          : { promptFile },
         create: {
           companyId: company.id,
           slug: agentDef.slug,
@@ -255,10 +262,16 @@ export async function seedDatabase(db: PrismaClient, options: SeedOptions): Prom
         where: {
           companyId_slug: { companyId: company.id, slug: agentDef.slug },
         },
-        update: {
-          // On re-seed: only update promptFile (don't overwrite manual model changes)
-          promptFile,
-        },
+        update: options.forceUpdate
+          ? {
+              promptFile,
+              modelProvider: provider,
+              model,
+            }
+          : {
+              // On re-seed: only update promptFile (don't overwrite manual model changes)
+              promptFile,
+            },
         create: {
           companyId: company.id,
           slug: agentDef.slug,

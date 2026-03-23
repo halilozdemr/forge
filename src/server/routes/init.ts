@@ -6,7 +6,7 @@ import { seedDatabase } from "../../db/seed.js";
 import { syncHeartbeatJobs } from "../../heartbeat/scheduler.js";
 
 export async function initRoutes(fastify: FastifyInstance) {
-  fastify.post("/init", async (req, reply) => {
+  fastify.post<{ Body: { forceUpdate?: boolean } }>("/init", async (req, reply) => {
     const rcPath = join(process.cwd(), ".forge", "config.json");
     if (!existsSync(rcPath)) {
       return reply.code(400).send({ error: "No .forge/config.json found. Run 'forge init' first." });
@@ -15,6 +15,7 @@ export async function initRoutes(fastify: FastifyInstance) {
     try {
       const configStr = readFileSync(rcPath, "utf-8");
       const config = JSON.parse(configStr);
+      const forceUpdate = req.body?.forceUpdate ?? false;
 
       const db = getDb();
       
@@ -24,6 +25,9 @@ export async function initRoutes(fastify: FastifyInstance) {
         projectName: config.project?.name ?? "my-project",
         projectPath: config.project?.path ?? process.cwd(),
         stack: config.project?.stack ?? "unknown",
+        providerStrategy: config.agentStrategy,
+        customAgents: config.agents,
+        forceUpdate,
       });
 
       // Sync heartbeat schedules for the newly seeded agents
