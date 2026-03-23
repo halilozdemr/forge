@@ -4,7 +4,21 @@ import { createChildLogger } from "../../utils/logger.js";
 import type { AgentRunner, AgentRunnerConfig, AgentResult } from "./types.js";
 
 const log = createChildLogger("codex-cli");
-const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000;
+const DEFAULT_TIMEOUT_MS = 20 * 60 * 1000;
+
+function buildPrompt(config: AgentRunnerConfig): string {
+  if (!config.systemPrompt?.trim()) {
+    return config.input;
+  }
+
+  return [
+    "System instructions:",
+    config.systemPrompt.trim(),
+    "",
+    "User request:",
+    config.input,
+  ].join("\n");
+}
 
 export class CodexCliRunner implements AgentRunner {
   async run(config: AgentRunnerConfig): Promise<AgentResult> {
@@ -20,7 +34,7 @@ export class CodexCliRunner implements AgentRunner {
           "--skip-git-repo-check",
           ...(config.model ? ["--model", config.model] : []),
           "--full-auto",
-          config.input,
+          buildPrompt(config),
         ];
         
         const proc = spawn("codex", args, {
@@ -34,6 +48,7 @@ export class CodexCliRunner implements AgentRunner {
         const timer = setTimeout(() => {
           timedOut = true;
           proc.kill("SIGTERM");
+          log.warn({ agent: config.agentSlug }, `Codex CLI timed out after ${timeoutMs / 1000}s`);
         }, timeoutMs);
 
         Promise.all([
@@ -47,7 +62,7 @@ export class CodexCliRunner implements AgentRunner {
             if (timedOut) {
               resolve({
                 success: false,
-                error: `Codex CLI timed out`,
+                error: `Codex CLI timed out after ${timeoutMs / 1000}s`,
                 durationMs,
                 provider: "codex-cli",
               });

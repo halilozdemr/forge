@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { getDb } from "../../db/client.js";
 import { transitionAgent } from "../../agents/lifecycle.js";
 import { buildHierarchy, formatHierarchy, getEscalationChain } from "../../agents/hierarchy.js";
+import { syncProjectClientProjectionsFromRegistry } from "../../opencode/project-config.js";
 
 export async function agentRoutes(server: FastifyInstance) {
   const db = getDb();
@@ -96,6 +97,12 @@ export async function agentRoutes(server: FastifyInstance) {
         model,
         reportsTo: reportsTo || null,
         permissions: JSON.stringify(permissions || {}),
+        clientConfig: JSON.stringify({
+          visibleIn: ["claude-code", "opencode"],
+          opencodeMode: slug === "receptionist" ? "primary" : "subagent",
+          displayOrder: 99,
+          entrypoint: slug === "receptionist",
+        }),
         heartbeatCron: heartbeatCron || null,
         status: "idle",
       },
@@ -105,16 +112,33 @@ export async function agentRoutes(server: FastifyInstance) {
       data: { companyId, actor: "user", action: "agent.hired", resource: `agent:${slug}` },
     });
 
+    const project = await db.project.findFirst({ where: { companyId }, orderBy: { createdAt: "asc" } });
+    if (project) {
+      await syncProjectClientProjectionsFromRegistry({ db, companyId, projectPath: project.path });
+    }
+
     return { agent };
   });
 
   // PUT /v1/agents/:slug (update)
   server.put<{
     Params: { slug: string };
-    Body: { companyId: string; status?: string; model?: string; heartbeatCron?: string | null; changeNote?: string };
+    Body: {
+      companyId: string;
+      status?: string;
+      model?: string;
+      modelProvider?: string;
+      name?: string;
+      role?: string;
+      promptFile?: string | null;
+      permissions?: Record<string, boolean> | string;
+      heartbeatCron?: string | null;
+      clientConfig?: Record<string, unknown> | string;
+      changeNote?: string;
+    };
   }>("/agents/:slug", async (request, reply) => {
     const { slug } = request.params;
-    const { companyId, status, changeNote, ...updates } = request.body;
+    const { companyId, status, changeNote, permissions, clientConfig, ...updates } = request.body;
 
     if (!companyId) return reply.code(400).send({ error: "companyId required" });
 
@@ -133,7 +157,17 @@ export async function agentRoutes(server: FastifyInstance) {
     }
 
     // Apply other updates and create revision if needed
-    if (Object.keys(updates).length > 0) {
+    const normalizedUpdates = {
+      ...updates,
+      ...(permissions !== undefined
+        ? { permissions: typeof permissions === "string" ? permissions : JSON.stringify(permissions) }
+        : {}),
+      ...(clientConfig !== undefined
+        ? { clientConfig: typeof clientConfig === "string" ? clientConfig : JSON.stringify(clientConfig) }
+        : {}),
+    };
+
+    if (Object.keys(normalizedUpdates).length > 0) {
       // Create revision snapshot of current state BEFORE applying updates
       const lastRevision = await db.agentConfigRevision.findFirst({
         where: { agentId: currentAgent.id },
@@ -151,6 +185,7 @@ export async function agentRoutes(server: FastifyInstance) {
         promptFile: currentAgent.promptFile,
         reportsTo: currentAgent.reportsTo,
         permissions: currentAgent.permissions,
+        clientConfig: currentAgent.clientConfig,
         adapterConfig: currentAgent.adapterConfig,
         heartbeatCron: currentAgent.heartbeatCron,
         maxSessionRuns: currentAgent.maxSessionRuns,
@@ -169,13 +204,18 @@ export async function agentRoutes(server: FastifyInstance) {
 
       await db.agent.update({
         where: { companyId_slug: { companyId, slug } },
-        data: updates,
+        data: normalizedUpdates,
       });
     }
 
     const agent = await db.agent.findUnique({
       where: { companyId_slug: { companyId, slug } },
     });
+
+    const project = await db.project.findFirst({ where: { companyId }, orderBy: { createdAt: "asc" } });
+    if (project) {
+      await syncProjectClientProjectionsFromRegistry({ db, companyId, projectPath: project.path });
+    }
 
     return { agent };
   });
@@ -244,6 +284,7 @@ export async function agentRoutes(server: FastifyInstance) {
       promptFile: agent.promptFile,
       reportsTo: agent.reportsTo,
       permissions: agent.permissions,
+      clientConfig: agent.clientConfig,
       adapterConfig: agent.adapterConfig,
       heartbeatCron: agent.heartbeatCron,
       maxSessionRuns: agent.maxSessionRuns,
@@ -265,6 +306,11 @@ export async function agentRoutes(server: FastifyInstance) {
       data: config,
     });
 
+    const project = await db.project.findFirst({ where: { companyId }, orderBy: { createdAt: "asc" } });
+    if (project) {
+      await syncProjectClientProjectionsFromRegistry({ db, companyId, projectPath: project.path });
+    }
+
     return { agent: updatedAgent, message: `Rolled back to revision ${revision}` };
   });
 
@@ -285,6 +331,11 @@ export async function agentRoutes(server: FastifyInstance) {
     await db.activityLog.create({
       data: { companyId, actor: "user", action: "agent.deleted", resource: `agent:${slug}` },
     });
+
+    const project = await db.project.findFirst({ where: { companyId }, orderBy: { createdAt: "asc" } });
+    if (project) {
+      await syncProjectClientProjectionsFromRegistry({ db, companyId, projectPath: project.path });
+    }
 
     return { message: `Agent "${slug}" deleted` };
   });

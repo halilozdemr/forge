@@ -2,7 +2,7 @@ import type { PipelineStep } from "../index.js";
 
 /**
  * Refactor pipeline:
- * CEO → Architect → Engineer → Reviewer → DevOps(commit)
+ * Approved brief → Architect → Builder → Reviewer → DevOps(commit)
  */
 export function buildRefactorPipeline(opts: {
   issueId: string;
@@ -13,26 +13,25 @@ export function buildRefactorPipeline(opts: {
 
   return [
     {
-      agentSlug: "ceo",
-      input: `Refactor request received.\n\n${context}\n\nEvaluate the scope and risk. Approve or reject, then hand off to the architect.`,
+      key: "architect",
+      agentSlug: "architect",
+      input: `Refactor brief already approved by the client.\n\n${context}\n\nDesign the refactoring plan. Ensure backward compatibility. Document the decision in .forge/memory/decisions.md.`,
       dependsOn: [],
     },
     {
-      agentSlug: "architect",
-      input: `Refactor approved.\n\n${context}\n\nDesign the refactoring plan. Ensure backward compatibility. Document the decision in .forge/memory/decisions.md.`,
-      dependsOn: ["ceo"],
-    },
-    {
-      agentSlug: "engineer",
+      key: "builder",
+      agentSlug: "builder",
       input: `Architect has created the refactoring plan.\n\n${context}\n\nImplement the refactor. Follow the plan precisely. Do not introduce new features.`,
       dependsOn: ["architect"],
     },
     {
+      key: "reviewer",
       agentSlug: "reviewer",
       input: `Refactor implemented.\n\n${context}\n\nReview for correctness, no unintended behavior changes, and adherence to the architect's plan.`,
-      dependsOn: ["engineer"],
+      dependsOn: ["builder"],
     },
     {
+      key: "devops",
       agentSlug: "devops",
       input: `Refactor reviewed and approved.\n\n${context}\n\nCommit with a "refactor:" conventional commit message.`,
       dependsOn: ["reviewer"],

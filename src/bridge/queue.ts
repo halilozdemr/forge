@@ -18,11 +18,15 @@ export interface AgentJobData {
   issueId?: string;
   sessionId?: string;
   timeoutMs?: number;
+  pipelineRunId?: string;
+  pipelineStepRunId?: string;
   nextAction?: {
     agentSlug: string;
     input: string;
   };
 }
+
+const DEFAULT_LEASE_MS = 30_000;
 
 export async function addJob(params: {
   companyId: string;
@@ -54,7 +58,21 @@ export function getQueue(connection?: any): any {
         payload: data,
       });
       return { id };
-    }
+    },
+    getJob: async (id: string) => {
+      const db = getDb();
+      const job = await db.queueJob.findUnique({ where: { id } });
+      if (!job) return null;
+
+      return {
+        id: job.id,
+        data: JSON.parse(job.payload),
+        progress: job.status === "completed" ? 100 : job.status === "running" ? 50 : 0,
+        returnvalue: job.result ? JSON.parse(job.result) : null,
+        failedReason: job.error,
+        getState: async () => job.status,
+      };
+    },
   };
 }
 
@@ -66,26 +84,82 @@ export async function getRedisStatus(): Promise<boolean> {
   return true;
 }
 
+export async function claimNextJob(workerId: string, leaseMs = DEFAULT_LEASE_MS) {
+  const db = getDb();
+  const now = new Date();
+  const leaseExpiresAt = new Date(now.getTime() + leaseMs);
+
+  return db.$transaction(async (tx) => {
+    const pending = await tx.queueJob.findFirst({
+      where: {
+        OR: [
+          { status: "pending", scheduledAt: { lte: now } },
+          { status: "running", leaseExpiresAt: { lt: now } },
+        ],
+      },
+      orderBy: { scheduledAt: "asc" },
+    });
+
+    if (!pending) return null;
+
+    return tx.queueJob.update({
+      where: { id: pending.id },
+      data: {
+        status: "running",
+        startedAt: pending.startedAt ?? now,
+        attempts: { increment: 1 },
+        workerId,
+        leaseExpiresAt,
+        lastHeartbeatAt: now,
+      },
+    });
+  });
+}
+
+export async function renewJobLease(jobId: string, workerId: string, leaseMs = DEFAULT_LEASE_MS): Promise<void> {
+  const db = getDb();
+  const now = new Date();
+  await db.queueJob.updateMany({
+    where: { id: jobId, workerId, status: "running" },
+    data: {
+      lastHeartbeatAt: now,
+      leaseExpiresAt: new Date(now.getTime() + leaseMs),
+    },
+  });
+}
+
 export async function enqueueAgentJob(opts: {
   companyId: string;
   agentSlug: string;
   agentId: string;
   input: string;
   issueId?: string;
+  projectPath?: string;
+  pipelineRunId?: string;
+  pipelineStepRunId?: string;
   nextAction?: { agentSlug: string; input: string };
 }): Promise<string> {
   const db = getDb();
 
   if (opts.issueId) {
-    const lockResult = await db.issue.updateMany({
-      where: { id: opts.issueId, executionLockedAt: null },
-      data: {
-        executionLockedAt: new Date(),
-        executionAgentSlug: opts.agentSlug,
-      },
+    const issue = await db.issue.findUnique({
+      where: { id: opts.issueId },
+      select: { executionLockedAt: true },
     });
 
-    if (lockResult.count === 0) {
+    if (issue?.executionLockedAt == null) {
+      const lockResult = await db.issue.updateMany({
+        where: { id: opts.issueId, executionLockedAt: null },
+        data: {
+          executionLockedAt: new Date(),
+          executionAgentSlug: opts.agentSlug,
+        },
+      });
+
+      if (lockResult.count === 0 && !opts.pipelineRunId) {
+        throw new Error(`Issue ${opts.issueId} is already being executed.`);
+      }
+    } else if (!opts.pipelineRunId) {
       throw new Error(`Issue ${opts.issueId} is already being executed.`);
     }
   }
@@ -118,9 +192,11 @@ export async function enqueueAgentJob(opts: {
     input: finalInput,
     permissions: JSON.parse(agent.permissions) as Record<string, boolean>,
     adapterConfig: JSON.parse(agent.adapterConfig || "{}"),
-    projectPath: process.cwd(),
+    projectPath: opts.projectPath ?? process.cwd(),
     issueId: opts.issueId,
     sessionId: await resolveSession(opts.agentId, opts.issueId),
+    pipelineRunId: opts.pipelineRunId,
+    pipelineStepRunId: opts.pipelineStepRunId,
     nextAction: opts.nextAction,
   };
 
@@ -134,7 +210,10 @@ export async function enqueueAgentJob(opts: {
   if (opts.issueId) {
     await db.issue.update({
       where: { id: opts.issueId },
-      data: { executionJobId: jobId },
+      data: {
+        executionJobId: jobId,
+        executionAgentSlug: opts.agentSlug,
+      },
     });
   }
 

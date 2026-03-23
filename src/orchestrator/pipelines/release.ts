@@ -2,7 +2,7 @@ import type { PipelineStep } from "../index.js";
 
 /**
  * Release pipeline:
- * CEO → DevOps(build) → DevOps(tag + merge) → Scrum-Master(retrospective)
+ * Approved brief → DevOps(build) → DevOps(tag + merge) → Scrum-Master(retrospective)
  */
 export function buildReleasePipeline(opts: {
   issueId: string;
@@ -13,24 +13,22 @@ export function buildReleasePipeline(opts: {
 
   return [
     {
-      agentSlug: "ceo",
-      input: `Release request received.\n\n${context}\n\nApprove the release. Verify all planned issues are done. Confirm the version number and release notes.`,
+      key: "devops-build",
+      agentSlug: "devops",
+      input: `Release brief already approved by the client.\n\n${context}\n\nRun the build process. Verify artifacts are clean. Create the release branch if needed.`,
       dependsOn: [],
     },
     {
-      agentSlug: "devops",
-      input: `Release approved by CEO.\n\n${context}\n\nRun the build process. Verify artifacts are clean. Create the release branch if needed.`,
-      dependsOn: ["ceo"],
-    },
-    {
+      key: "devops-release",
       agentSlug: "devops",
       input: `Build complete.\n\n${context}\n\nTag the release commit (e.g., v1.2.0). Merge the release branch into main. Push the tag.`,
-      dependsOn: ["devops"],
+      dependsOn: ["devops-build"],
     },
     {
-      agentSlug: "scrum-master",
+      key: "scrum_master",
+      agentSlug: "scrum_master",
       input: `Release "${opts.title}" shipped.\n\n${context}\n\nClose the sprint, write a retrospective in .forge/memory/retrospectives/, update the backlog for next sprint.`,
-      dependsOn: ["devops"],
+      dependsOn: ["devops-release"],
     },
   ];
 }

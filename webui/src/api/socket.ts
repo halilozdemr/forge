@@ -1,4 +1,5 @@
 import { agentsStore, issuesStore, activeJobsCount } from '../store/store';
+import { fetchIssues } from './issues';
 
 let socket: WebSocket | null = null;
 let reconnectTimer: NodeJS.Timeout | null = null;
@@ -55,6 +56,7 @@ function handleServerEvent(event: any) {
       break;
     case 'issue.updated':
       updateIssueStatus(event.issueId, event.status);
+      void fetchIssues();
       break;
     case 'queue.job.started':
       activeJobsCount.set(activeJobsCount.value + 1);

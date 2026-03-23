@@ -29,11 +29,11 @@ export async function runHeartbeatForAgent(ctx: HeartbeatContext): Promise<strin
     let result: string;
 
     switch (agentSlug) {
-      case "scrum-master":
+      case "scrum_master":
         result = await handleScrumMasterHeartbeat(companyId);
         break;
-      case "ceo":
-        result = await handleCeoHeartbeat(companyId);
+      case "receptionist":
+        result = await handleReceptionistHeartbeat(companyId);
         break;
       case "pm":
         result = await handlePmHeartbeat(companyId);
@@ -88,11 +88,11 @@ async function handleScrumMasterHeartbeat(companyId: string): Promise<string> {
 
     if (!retroExists) {
       // Queue a retrospective task for scrum-master
-      const agent = await db.agent.findFirst({ where: { companyId, slug: "scrum-master" } });
+      const agent = await db.agent.findFirst({ where: { companyId, slug: "scrum_master" } });
       if (agent) {
         await enqueueAgentJob({
           companyId,
-          agentSlug: "scrum-master",
+          agentSlug: "scrum_master",
           agentId: agent.id,
           input: `Sprint #${sprint.number} (${sprint.goal}) is complete. Write a retrospective summary and save key learnings.`,
           issueId: undefined,
@@ -115,16 +115,16 @@ async function handleScrumMasterHeartbeat(companyId: string): Promise<string> {
   if (staleIssues.length > 0) {
     actions.push(`found ${staleIssues.length} stale in_progress issues`);
     log.warn({ companyId, count: staleIssues.length }, "Stale issues detected by scrum-master heartbeat");
-    emit({ type: "heartbeat.log", agentSlug: "scrum-master", line: `Found ${staleIssues.length} stale issues.` });
+    emit({ type: "heartbeat.log", agentSlug: "scrum_master", line: `Found ${staleIssues.length} stale issues.` });
   }
 
   return actions.length > 0 ? actions.join("; ") : "no action needed";
 }
 
 /**
- * CEO: check for unassigned open issues, flag blockers.
+ * Receptionist: check for unassigned open issues, flag blockers.
  */
-async function handleCeoHeartbeat(companyId: string): Promise<string> {
+async function handleReceptionistHeartbeat(companyId: string): Promise<string> {
   const db = getDb();
   const actions: string[] = [];
 
@@ -138,8 +138,8 @@ async function handleCeoHeartbeat(companyId: string): Promise<string> {
 
   if (unassignedOpen > 0) {
     actions.push(`${unassignedOpen} unassigned open issues`);
-    log.warn({ companyId, unassignedOpen }, "CEO heartbeat: unassigned open issues");
-    emit({ type: "heartbeat.log", agentSlug: "ceo", line: `Found ${unassignedOpen} unassigned open issues.` });
+    log.warn({ companyId, unassignedOpen }, "Receptionist heartbeat: unassigned open issues");
+    emit({ type: "heartbeat.log", agentSlug: "receptionist", line: `Found ${unassignedOpen} unassigned open issues.` });
   }
 
   const escalatedIssues = await db.issue.count({

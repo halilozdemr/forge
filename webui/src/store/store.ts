@@ -35,9 +35,26 @@ export interface Agent {
 export interface Issue {
   id: string;
   title: string;
-  status: 'open' | 'in_progress' | 'review' | 'done';
-  type: 'feature' | 'bug' | 'refactor' | 'release' | 'chore';
+  status: 'open' | 'todo' | 'in_progress' | 'review' | 'in_review' | 'done' | 'failed' | 'cancelled' | 'blocked';
+  type: 'feature' | 'bug' | 'refactor' | 'release' | 'chore' | string;
   assignedAgentId?: string;
+  assignedAgent?: { slug: string; name: string } | null;
+  executionAgentSlug?: string | null;
+  pipeline?: {
+    id: string;
+    status: string;
+    entryAgentSlug: string;
+    currentStepKey: string | null;
+    activeStepKey: string | null;
+    activeAgentSlug: string | null;
+    activeStatus: string | null;
+    activeExcerpt?: string | null;
+    completedSteps: number;
+    totalSteps: number;
+    startedAt: string;
+    completedAt: string | null;
+    updatedAt: string;
+  } | null;
 }
 
 export interface HealthStatus {
