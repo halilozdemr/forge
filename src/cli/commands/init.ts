@@ -1,8 +1,12 @@
 import { Command } from "commander";
 import { existsSync } from "fs";
 import { mkdir, writeFile, copyFile } from "fs/promises";
-import { join, resolve } from "path";
+import { join, resolve, dirname } from "path";
 import { execSync } from "child_process";
+import os from "os";
+import { fileURLToPath } from "url";
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 import { intro, outro, text, confirm, select, p } from "../prompts.js";
 import { loadConfig } from "../../utils/config.js";
 import { createChildLogger } from "../../utils/logger.js";
@@ -309,7 +313,7 @@ async function runInit(opts: { yes?: boolean }): Promise<void> {
 
   // ── Claude CLI path (advanced only) ─────────────────────────────────────────
   let claudePath = detectedClaude?.path ?? "claude";
-  if (advanced && hasClaude) {
+  if (advanced && !hasClaude) {
     claudePath = await text({ message: "Claude CLI path:", defaultValue: detectedClaude!.path });
   }
 
@@ -756,6 +760,27 @@ async function runInit(opts: { yes?: boolean }): Promise<void> {
       const res = await fetch(`http://localhost:${config.port}/v1/init`, { method: "POST" });
       if (res.ok) p.log.success("Server synchronized.");
     } catch { /* server not running, that's fine */ }
+
+    // 9. Register forge-mcp in ~/.claude.json (if Claude Code detected)
+    if (hasClaude) {
+      try {
+        const { readFileSync, writeFileSync, existsSync } = await import("fs");
+        const claudeJsonPath = join(os.homedir(), ".claude.json");
+        const forgeMcpEntry = {
+          command: "node",
+          args: [join(__dirname, "..", "..", "..", "bin", "forge-mcp.js")],
+        };
+        let claudeJson: Record<string, any> = {};
+        if (existsSync(claudeJsonPath)) {
+          try { claudeJson = JSON.parse(readFileSync(claudeJsonPath, "utf-8")); } catch { /* malformed, start fresh */ }
+        }
+        claudeJson.mcpServers = { ...(claudeJson.mcpServers ?? {}), forge: forgeMcpEntry };
+        writeFileSync(claudeJsonPath, JSON.stringify(claudeJson, null, 2));
+        p.log.success("forge-mcp registered in ~/.claude.json");
+      } catch (e) {
+        p.log.warn(`Could not update ~/.claude.json: ${e instanceof Error ? e.message : e}`);
+      }
+    }
 
     s.stop("Forge initialized.");
 

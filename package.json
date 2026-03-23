@@ -4,12 +4,14 @@
   "description": "CLI-first AI agent orchestration platform — spawn and manage a team of AI agents from your terminal",
   "type": "module",
   "bin": {
-    "forge": "./dist/bin/forge.js"
+    "forge": "./dist/bin/forge.js",
+    "forge-mcp": "./dist/bin/forge-mcp.js"
   },
   "main": "./dist/src/index.js",
   "types": "./dist/src/index.d.ts",
   "scripts": {
     "dev": "tsx bin/forge.ts start",
+    "mcp": "tsx bin/forge-mcp.ts",
     "build": "npm run webui:build && tsc -p tsconfig.build.json",
     "postinstall": "cd webui && npm install",
     "start": "node dist/bin/forge.js start",
@@ -36,6 +38,7 @@
     "@fastify/cors": "^8.5.0",
     "@fastify/static": "^7.0.4",
     "@fastify/websocket": "^8.3.1",
+    "@modelcontextprotocol/sdk": "^1.27.1",
     "@prisma/client": "^5.7.1",
     "adm-zip": "^0.5.16",
     "commander": "^13.1.0",
