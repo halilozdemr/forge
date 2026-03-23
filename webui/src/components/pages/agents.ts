@@ -2,7 +2,7 @@ import { agentsStore, Agent } from '../../store/store';
 import { fetchAgents, fireAgent } from '../../api/agents';
 import { addToast } from '../shared/toast';
 import { showConfirm } from '../shared/confirm-dialog';
-import { HireAgentModal } from '../shared/agent-modals';
+import { EditAgentModal, HireAgentModal } from '../shared/agent-modals';
 import { SkeletonRows } from '../shared/skeleton';
 import { EmptyState } from '../shared/empty-state';
 import { esc } from '../../api/utils';
@@ -17,6 +17,7 @@ const STATUS_COLOR: Record<Agent['status'], string> = {
   active: 'green',
   idle:   'gray',
   paused: 'amber',
+  terminated: 'red',
   error:  'red',
 };
 
@@ -100,12 +101,27 @@ export function AgentsPage() {
           <td style="font-family:var(--font-mono);font-size:13px">$${(agent.cost ?? 0).toFixed(4)}</td>
           <td>
             <div class="actions">
+              <button class="btn-icon" data-slug="${esc(agent.slug)}" data-action="edit">Edit</button>
               <button class="btn-icon btn-danger" data-slug="${esc(agent.slug)}" data-action="fire">Fire</button>
             </div>
           </td>
         </tr>
       `;
     }).join('');
+
+    tbody.querySelectorAll('[data-action="edit"]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const slug = (btn as HTMLElement).dataset.slug!;
+        const agent = agents.find((entry) => entry.slug === slug);
+        if (!agent) {
+          addToast(`Agent ${slug} not found`, 'error');
+          return;
+        }
+
+        const modal = EditAgentModal(agent, () => document.body.removeChild(modal));
+        document.body.appendChild(modal);
+      });
+    });
 
     tbody.querySelectorAll('[data-action="fire"]').forEach(btn => {
       btn.addEventListener('click', async () => {

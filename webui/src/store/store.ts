@@ -27,8 +27,14 @@ export interface Agent {
   role?: string;
   model: string;
   modelProvider?: string;
+  promptFile?: string | null;
+  reportsTo?: string | null;
+  permissions?: string | Record<string, boolean>;
+  maxConcurrent?: number;
+  heartbeatCron?: string | null;
+  clientConfig?: string | Record<string, unknown>;
   systemPrompt?: string;
-  status: 'idle' | 'active' | 'paused' | 'error';
+  status: 'idle' | 'active' | 'paused' | 'terminated' | 'error';
   cost?: number;
 }
 
