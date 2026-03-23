@@ -51,6 +51,7 @@ export class ClaudeCliRunner implements AgentRunner {
       try {
         const args = [
           "-p",
+          "--verbose",
           "--output-format", "stream-json",
           "--model", config.model,
         ];
