@@ -2,9 +2,11 @@ import { Sidebar } from './sidebar';
 import { Topbar } from './topbar';
 import { ToastContainer } from '../shared/toast';
 import { CommandPalette } from '../shared/command-palette';
+import { LiveLogs } from '../shared/live-logs';
 
 let toastMounted = false;
 let paletteMounted = false;
+let logsMounted = false;
 
 export function Layout(content: HTMLElement) {
   const shell = document.createElement('div');
@@ -27,6 +29,11 @@ export function Layout(content: HTMLElement) {
   if (!paletteMounted) {
     document.body.appendChild(CommandPalette());
     paletteMounted = true;
+  }
+
+  if (!logsMounted) {
+    document.body.appendChild(LiveLogs());
+    logsMounted = true;
   }
 
   // Global ⌘K keyboard shortcut

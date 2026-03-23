@@ -72,8 +72,25 @@ export interface HealthStatus {
   };
 }
 
+export interface LogEntry {
+  ts: number;
+  agentSlug: string;
+  line: string;
+}
+
+const LOG_BUFFER_SIZE = 300;
+
+export function appendLog(store: Signal<LogEntry[]>, entry: LogEntry) {
+  const prev = store.value;
+  const next = prev.length >= LOG_BUFFER_SIZE
+    ? [...prev.slice(prev.length - LOG_BUFFER_SIZE + 1), entry]
+    : [...prev, entry];
+  store.set(next);
+}
+
 // Global Store
 export const agentsStore = new Signal<Agent[]>([]);
 export const issuesStore = new Signal<Issue[]>([]);
 export const healthStore = new Signal<HealthStatus | null>(null);
 export const activeJobsCount = new Signal<number>(0);
+export const logsStore = new Signal<LogEntry[]>([]);

@@ -51,7 +51,7 @@ export class ClaudeCliRunner implements AgentRunner {
       try {
         const args = [
           "-p",
-          "--output-format", "json",
+          "--output-format", "stream-json",
           "--model", config.model,
         ];
 
@@ -122,10 +122,27 @@ export class ClaudeCliRunner implements AgentRunner {
               return;
             }
 
-            // Parse Claude CLI JSON envelope
+            // Parse Claude CLI stream-json envelope (one JSON object per line)
             try {
-              const envelope = JSON.parse(stdout) as Record<string, unknown>;
-              const output = typeof envelope?.result === "string" ? envelope.result : stdout;
+              let resultEnvelope: Record<string, unknown> | null = null;
+              for (const line of stdout.split("\n")) {
+                const trimmed = line.trim();
+                if (!trimmed) continue;
+                try {
+                  const parsed = JSON.parse(trimmed) as Record<string, unknown>;
+                  if (parsed.type === "result") {
+                    resultEnvelope = parsed;
+                  }
+                } catch {
+                  // skip non-JSON lines
+                }
+              }
+
+              const output = resultEnvelope
+                ? (typeof resultEnvelope.result === "string" ? resultEnvelope.result : stdout)
+                : stdout;
+
+              const usage = resultEnvelope?.usage as Record<string, number> | undefined;
 
               log.info({ agent: config.agentSlug, chars: output.length, durationMs }, "CLI completed");
 
@@ -133,14 +150,13 @@ export class ClaudeCliRunner implements AgentRunner {
                 success: true,
                 output,
                 tokenUsage: {
-                  input: (envelope?.input_tokens as number) || 0,
-                  output: (envelope?.output_tokens as number) || 0,
+                  input: usage?.input_tokens || (resultEnvelope?.input_tokens as number) || 0,
+                  output: usage?.output_tokens || (resultEnvelope?.output_tokens as number) || 0,
                 },
                 durationMs,
                 provider: "claude-cli",
               });
             } catch {
-              // Not JSON — return raw stdout
               resolve({
                 success: true,
                 output: stdout,

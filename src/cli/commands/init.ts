@@ -965,9 +965,11 @@ function buildModelOptions(
       opts.push({ value: `claude-cli|${configModel}`, label: `Claude Code CLI — ${configModel} (from config)` });
       opts.push({ value: "claude-cli|sonnet", label: "Claude Code CLI — sonnet" });
       opts.push({ value: "claude-cli|opus",   label: "Claude Code CLI — opus" });
+      opts.push({ value: "claude-cli|haiku",  label: "Claude Code CLI — haiku" });
     } else {
       opts.push({ value: "claude-cli|sonnet", label: "Claude Code CLI — sonnet" });
       opts.push({ value: "claude-cli|opus",   label: "Claude Code CLI — opus" });
+      opts.push({ value: "claude-cli|haiku",  label: "Claude Code CLI — haiku" });
     }
   }
   if (available.includes("gemini-cli")) {

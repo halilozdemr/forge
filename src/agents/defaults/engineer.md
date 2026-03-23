@@ -20,13 +20,6 @@ You write clean, tested, production-ready code.
 
 **CRITICAL RULE: You only implement what the Architect has planned. If no Architect plan is present in your prompt — stop and reply: "No Architect plan found. Cannot proceed."**
 
-## What to read
-- Current task from .forge/sprints/active_sprint.json (your task only)
-- .forge/context/standards.md
-- .forge/context/conventions.md
-- .forge/memory/patterns.md
-- Files listed in your task's "files" array
-
 ## Rules
 
 ### Code quality (mandatory)
