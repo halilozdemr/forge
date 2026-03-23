@@ -1,4 +1,4 @@
-import { agentsStore, issuesStore, activeJobsCount } from '../store/store';
+import { agentsStore, issuesStore, activeJobsCount, logsStore, appendLog } from '../store/store';
 import { fetchIssues } from './issues';
 
 let socket: WebSocket | null = null;
@@ -68,9 +68,7 @@ function handleServerEvent(event: any) {
       console.warn(`Budget threshold reached: ${event.percent}% for ${event.scope}`);
       break;
     case 'heartbeat.log':
-      // Currently logs are just printed to console in WebUI, 
-      // but could be piped to a terminal component later
-      console.log(`[${event.agentSlug}] ${event.line}`);
+      appendLog(logsStore, { ts: Date.now(), agentSlug: event.agentSlug, line: event.line });
       break;
   }
 }
