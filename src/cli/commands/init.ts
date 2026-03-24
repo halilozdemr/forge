@@ -603,6 +603,24 @@ async function runInit(opts: { yes?: boolean }): Promise<void> {
     }
   }
 
+  // ── Telegram notifications ────────────────────────────────────────────────────
+  let telegramBotToken = "";
+  let telegramChatId   = "";
+
+  const enableTelegram = await confirm({ message: "Enable Telegram notifications?", initialValue: false });
+  if (enableTelegram) {
+    telegramBotToken = await text({
+      message: "Telegram Bot Token (from @BotFather):",
+      placeholder: "123456789:AAF...",
+      validate: (v) => (!v.trim() ? "Bot token is required" : undefined),
+    });
+    telegramChatId = await text({
+      message: "Telegram Chat ID (your user or group chat ID):",
+      placeholder: "-100123456789",
+      validate: (v) => (!v.trim() ? "Chat ID is required" : undefined),
+    });
+  }
+
   // ── Agent setup (advanced only) ───────────────────────────────────────────────
   let useDefaultAgents = true;
   let customAgents: CustomAgentDef[] | undefined;
@@ -702,6 +720,7 @@ async function runInit(opts: { yes?: boolean }): Promise<void> {
       }
     }
     if (enableBudget) p.log.message(`  Budget:         $${monthlyBudget}/month`);
+    if (enableTelegram) p.log.message(`  Telegram:       chat ${telegramChatId}`);
 
     const ok = await confirm({ message: "Write this configuration?", initialValue: true });
     if (!ok) {
@@ -766,6 +785,7 @@ async function runInit(opts: { yes?: boolean }): Promise<void> {
       agentStrategy: useDefaultAgents ? providerStrategy : undefined,
       agents:        useDefaultAgents ? undefined : customAgents,
       budget: { enabled: enableBudget, monthlyLimitUsd: parseFloat(monthlyBudget) },
+      telegram: enableTelegram ? { botToken: telegramBotToken, chatId: telegramChatId } : undefined,
     };
     await writeFile(join(forgeDir, "config.json"), JSON.stringify(forgeConfig, null, 2));
 
@@ -849,6 +869,7 @@ async function runInit(opts: { yes?: boolean }): Promise<void> {
       p.log.success(`${customAgents?.length ?? 0} custom agent(s) configured`);
     }
     if (enableBudget) p.log.success(`Budget: $${monthlyBudget}/month`);
+    if (enableTelegram) p.log.success(`Telegram notifications enabled (chat ${telegramChatId})`);
 
     outro(`Run \x1b[1mforge start\x1b[0m to launch  ·  \x1b[1mforge doctor\x1b[0m to verify setup`);
   } catch (err) {

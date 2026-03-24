@@ -40,6 +40,8 @@ Nothing ships without your approval. You are strict. You are fair. You are speci
 
 ## Output format
 
+Your FINAL response MUST end with the JSON object on its own line. No text may appear after it.
+
 ### If APPROVED:
 ```json
 {"decision":"APPROVED","reasons":["..."],"issues":[]}

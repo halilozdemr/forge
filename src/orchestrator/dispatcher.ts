@@ -23,6 +23,46 @@ function summarizeResult(result: string, maxLength = 500): string {
   return `${result.slice(0, maxLength)}...`;
 }
 
+function parseReviewerDecision(output: string): { decision: "APPROVED" | "REJECTED"; issues: string[] } | null {
+  // Scan backwards for the last JSON block starting with {"decision"
+  const lastIndex = output.lastIndexOf('{"decision"');
+  if (lastIndex === -1) return null;
+  try {
+    // Find the matching closing brace
+    let depth = 0;
+    let end = lastIndex;
+    for (let i = lastIndex; i < output.length; i++) {
+      if (output[i] === "{") depth++;
+      else if (output[i] === "}") {
+        depth--;
+        if (depth === 0) { end = i; break; }
+      }
+    }
+    const parsed = JSON.parse(output.slice(lastIndex, end + 1)) as { decision?: string; issues?: unknown };
+    if (parsed.decision !== "APPROVED" && parsed.decision !== "REJECTED") return null;
+    const issues = Array.isArray(parsed.issues) ? (parsed.issues as string[]) : [];
+    return { decision: parsed.decision as "APPROVED" | "REJECTED", issues };
+  } catch {
+    return null;
+  }
+}
+
+function getTransitiveDependents(allStepRuns: { stepKey: string; dependsOn: string }[], targetStepKey: string): string[] {
+  const result = new Set<string>();
+  const queue = [targetStepKey];
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    result.add(current);
+    for (const step of allStepRuns) {
+      const deps = JSON.parse(step.dependsOn || "[]") as string[];
+      if (deps.includes(current) && !result.has(step.stepKey)) {
+        queue.push(step.stepKey);
+      }
+    }
+  }
+  return Array.from(result);
+}
+
 export class PipelineDispatcher {
   constructor(private db: PrismaClient) {}
 
@@ -173,6 +213,12 @@ export class PipelineDispatcher {
     });
     if (!stepRun) return;
 
+    // Guard: stale job arriving after this step was reset to pending
+    if (stepRun.status !== "running") {
+      log.warn({ stepRunId, status: stepRun.status }, "handleStepSuccess called on non-running step — ignoring stale job");
+      return;
+    }
+
     await this.db.pipelineStepRun.update({
       where: { id: stepRunId },
       data: {
@@ -181,6 +227,51 @@ export class PipelineDispatcher {
         resultSummary: summarizeResult(resultSummary),
       },
     });
+
+    // Feedback loop: check if this step should loop back to a previous step on REJECTED
+    const plan = JSON.parse(stepRun.pipelineRun.planJson || "[]") as { key: string; input: string; loopsBackTo?: string; maxRevisions?: number }[];
+    const planStep = plan.find((s) => s.key === stepRun.stepKey);
+
+    if (planStep?.loopsBackTo) {
+      const decision = parseReviewerDecision(resultSummary);
+      if (decision?.decision === "REJECTED") {
+        const targetStepKey = planStep.loopsBackTo;
+        const maxRevisions = planStep.maxRevisions ?? 3;
+        const targetStepRun = stepRun.pipelineRun.stepRuns.find((s) => s.stepKey === targetStepKey);
+
+        if (!targetStepRun) {
+          log.warn({ stepRunId, targetStepKey }, "loopsBackTo target step not found — proceeding normally");
+        } else if (targetStepRun.attempts >= maxRevisions) {
+          log.warn({ stepRunId, targetStepKey, attempts: targetStepRun.attempts, maxRevisions }, "Max revisions reached — hard failing pipeline");
+          await this.handleStepFailure(stepRunId, `Max revisions (${maxRevisions}) reached. Last rejection: ${decision.issues.join("; ")}`, false);
+          return;
+        } else {
+          // Build enriched input from original plan + revision info + reviewer feedback
+          const originalInput = plan.find((s) => s.key === targetStepKey)?.input ?? targetStepRun.inputSnapshot;
+          const issueLines = decision.issues.length > 0 ? decision.issues.map((i) => `- ${i}`).join("\n") : "See reviewer output above.";
+          const feedbackInput = `REVISION ${targetStepRun.attempts + 1} — Reviewer rejected previous implementation.\n\n## Reviewer Feedback\n${issueLines}\n\n## Original Task\n${originalInput}`;
+
+          // Reset target step + all transitive dependents back to pending
+          const stepsToReset = getTransitiveDependents(stepRun.pipelineRun.stepRuns, targetStepKey);
+          for (const stepKey of stepsToReset) {
+            await this.db.pipelineStepRun.update({
+              where: { pipelineRunId_stepKey: { pipelineRunId: stepRun.pipelineRunId, stepKey } },
+              data: {
+                status: "pending",
+                queueJobId: null,
+                completedAt: null,
+                resultSummary: null,
+                ...(stepKey === targetStepKey ? { inputSnapshot: feedbackInput } : {}),
+              },
+            });
+          }
+
+          log.info({ pipelineRunId: stepRun.pipelineRunId, targetStepKey, revision: targetStepRun.attempts + 1 }, "Reviewer rejected — resetting for revision");
+          await this.enqueueEligibleSteps(stepRun.pipelineRunId);
+          return;
+        }
+      }
+    }
 
     const queued = await this.enqueueEligibleSteps(stepRun.pipelineRunId);
     if (queued.length > 0) return;

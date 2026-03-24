@@ -13,6 +13,10 @@ export interface PipelineStep {
   input: string;
   /** Keys of steps that must complete before this step runs */
   dependsOn: string[];
+  /** If this step outputs REJECTED, reset execution back to this step key */
+  loopsBackTo?: string;
+  /** Max times loopsBackTo resets are allowed before hard-failing. Default: 3. Tracked via target step's `attempts` field. */
+  maxRevisions?: number;
 }
 
 export interface DispatchResult {

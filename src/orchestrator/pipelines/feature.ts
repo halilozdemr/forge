@@ -33,7 +33,7 @@ export function buildFeaturePipeline(opts: {
     {
       key: "builder",
       agentSlug: "builder",
-      input: `Architecture plan ready.\n\n${context}\n\nImplement the feature following the architect's plan. Write tests. Follow conventions in .forge/context/conventions.md.`,
+      input: `Architecture plan ready.\n\n${context}\n\nRead the implementation plan from .forge/memory/decisions.md before writing any code. Implement the feature following the architect's plan. Write tests. Follow conventions in .forge/context/conventions.md.`,
       dependsOn: ["architect"],
     },
     {
@@ -41,6 +41,8 @@ export function buildFeaturePipeline(opts: {
       agentSlug: "reviewer",
       input: `Builder has completed implementation.\n\n${context}\n\nReview the code for quality, security, and adherence to standards in .forge/context/standards.md. Approve or request changes.`,
       dependsOn: ["builder"],
+      loopsBackTo: "builder",
+      maxRevisions: 3,
     },
     {
       key: "devops-merge",
