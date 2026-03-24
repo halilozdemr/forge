@@ -21,7 +21,7 @@ export function buildRefactorPipeline(opts: {
     {
       key: "builder",
       agentSlug: "builder",
-      input: `Architect has created the refactoring plan.\n\n${context}\n\nImplement the refactor. Follow the plan precisely. Do not introduce new features.`,
+      input: `Architect has created the refactoring plan.\n\n${context}\n\nRead the plan from .forge/memory/decisions.md before writing any code. Implement the refactor. Follow the plan precisely. Do not introduce new features.`,
       dependsOn: ["architect"],
     },
     {
@@ -29,6 +29,8 @@ export function buildRefactorPipeline(opts: {
       agentSlug: "reviewer",
       input: `Refactor implemented.\n\n${context}\n\nReview for correctness, no unintended behavior changes, and adherence to the architect's plan.`,
       dependsOn: ["builder"],
+      loopsBackTo: "builder",
+      maxRevisions: 3,
     },
     {
       key: "devops",

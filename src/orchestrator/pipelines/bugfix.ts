@@ -23,6 +23,8 @@ export function buildBugfixPipeline(opts: {
       agentSlug: "reviewer",
       input: `Bug fix implemented.\n\n${context}\n\nReview the fix for correctness and regressions. Confirm the bug is resolved.`,
       dependsOn: ["debugger"],
+      loopsBackTo: "debugger",
+      maxRevisions: 3,
     },
     {
       key: "devops",
