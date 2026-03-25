@@ -31,7 +31,7 @@
     "claude",
     "cli"
   ],
-  "author": "The Firm",
+  "author": "Forge Contributors",
   "license": "MIT",
   "dependencies": {
     "@clack/prompts": "^0.10.0",

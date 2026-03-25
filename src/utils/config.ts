@@ -1,8 +1,8 @@
 import { readFileSync, existsSync } from "fs";
-import { join, resolve } from "path";
+import { join } from "path";
 import { homedir } from "os";
 
-export interface FirmConfig {
+export interface ForgeConfig {
   port: number;
   host: string;
   concurrency: number;
@@ -18,7 +18,7 @@ export interface FirmConfig {
 
 const DEFAULT_DB_PATH = join(homedir(), ".forge", "forge.db");
 
-const DEFAULT_CONFIG: FirmConfig = {
+const DEFAULT_CONFIG: ForgeConfig = {
   port: 3131,
   host: "0.0.0.0",
   concurrency: 3,
@@ -44,13 +44,10 @@ function findClaudeCli(): string {
   return "claude";
 }
 
-export function loadConfig(overrides: Partial<FirmConfig> = {}): FirmConfig {
-  // Load from .firmrc if exists
-  let fileConfig: Partial<FirmConfig> = {};
-  const rcPathFirm = join(process.cwd(), ".firm", "config.json");
-  const rcPathForge = join(process.cwd(), ".forge", "config.json");
-  const rcPath = existsSync(rcPathForge) ? rcPathForge : rcPathFirm;
-  
+export function loadConfig(overrides: Partial<ForgeConfig> = {}): ForgeConfig {
+  let fileConfig: Partial<ForgeConfig> = {};
+  const rcPath = join(process.cwd(), ".forge", "config.json");
+
   if (existsSync(rcPath)) {
     try {
       fileConfig = JSON.parse(readFileSync(rcPath, "utf-8"));
@@ -60,12 +57,12 @@ export function loadConfig(overrides: Partial<FirmConfig> = {}): FirmConfig {
   }
 
   // Env overrides
-  const envConfig: Partial<FirmConfig> = {};
-  if (process.env.FIRM_PORT) envConfig.port = parseInt(process.env.FIRM_PORT, 10);
-  if (process.env.FIRM_HOST) envConfig.host = process.env.FIRM_HOST;
-  if (process.env.FIRM_CONCURRENCY) envConfig.concurrency = parseInt(process.env.FIRM_CONCURRENCY, 10);
+  const envConfig: Partial<ForgeConfig> = {};
+  if (process.env.FORGE_PORT) envConfig.port = parseInt(process.env.FORGE_PORT, 10);
+  if (process.env.FORGE_HOST) envConfig.host = process.env.FORGE_HOST;
+  if (process.env.FORGE_CONCURRENCY) envConfig.concurrency = parseInt(process.env.FORGE_CONCURRENCY, 10);
   if (process.env.DATABASE_URL && process.env.DATABASE_URL.startsWith("file:")) envConfig.databaseUrl = process.env.DATABASE_URL;
-  if (process.env.CLAUDE_PATH) envConfig.claudePath = process.env.CLAUDE_PATH;
+  if (process.env.CLAUDE_CLI_PATH) envConfig.claudePath = process.env.CLAUDE_CLI_PATH;
   if (process.env.LOG_LEVEL) envConfig.logLevel = process.env.LOG_LEVEL;
 
   const config = {

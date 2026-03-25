@@ -11,13 +11,13 @@ function findProjectRoot(): string {
   const __filename = fileURLToPath(import.meta.url);
   const __dirname = dirname(__filename);
 
-  // When running via tsx: __dirname = v3/src/db → go up 2 levels = v3/
+  // When running via tsx: __dirname = src/db → go up 2 levels = project root
   const fromSource = resolve(__dirname, "..", "..");
   if (existsSync(join(fromSource, "prisma", "schema.prisma"))) {
     return fromSource;
   }
 
-  // When running from dist: dist/src/db → go up 3 levels = v3/
+  // When running from dist: dist/src/db → go up 3 levels = project root
   const fromDist = resolve(__dirname, "..", "..", "..");
   if (existsSync(join(fromDist, "prisma", "schema.prisma"))) {
     return fromDist;
