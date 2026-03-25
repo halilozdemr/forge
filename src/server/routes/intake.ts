@@ -3,6 +3,7 @@ import { getDb } from "../../db/client.js";
 import { IntakeService } from "../../orchestrator/intake.js";
 import { PipelineDispatcher } from "../../orchestrator/dispatcher.js";
 import { loadConfig } from "../../utils/config.js";
+import { isOfficialAgentSlug } from "../../agents/constants.js";
 
 async function resolveProjectId() {
   const db = getDb();
@@ -44,6 +45,11 @@ export async function intakeRoutes(server: FastifyInstance) {
 
     if (request.body.type === "direct" && !request.body.requestedAgentSlug) {
       return reply.code(400).send({ error: "requestedAgentSlug is required for direct requests" });
+    }
+    if (request.body.type === "direct" && request.body.requestedAgentSlug && isOfficialAgentSlug(request.body.requestedAgentSlug)) {
+      return reply.code(400).send({
+        error: "Direct run is disabled for official agents. Use intake-first official request types.",
+      });
     }
 
     const service = new IntakeService(getDb());

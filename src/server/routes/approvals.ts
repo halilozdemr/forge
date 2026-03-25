@@ -5,8 +5,53 @@ import { transitionAgent } from "../../agents/lifecycle.js";
 
 const log = createChildLogger("approvals-api");
 
+export function describeApproval(type: string, metadata: Record<string, unknown>): string {
+  switch (type) {
+    case "hire_agent":
+      return `Hire agent "${metadata.slug ?? "?"}" (model: ${metadata.model ?? "unknown"})`;
+    case "budget_override":
+      return `Budget override for agent "${metadata.agentSlug ?? "?"}"`;
+    case "ceo_strategy":
+      return `CEO strategy decision required`;
+    default:
+      return `Approval of type "${type}"`;
+  }
+}
+
 export async function approvalRoutes(server: FastifyInstance) {
   const db = getDb();
+
+  // GET /v1/approvals/inbox?companyId=&status= — enriched inbox with parsed metadata
+  server.get<{ Querystring: { companyId: string; status?: string } }>("/approvals/inbox", async (request, reply) => {
+    const { companyId, status } = request.query;
+
+    if (!companyId) return reply.code(400).send({ error: "companyId required" });
+
+    const rows = await db.approval.findMany({
+      where: {
+        companyId,
+        status: status || "pending",
+      },
+      orderBy: { requestedAt: "asc" },
+    });
+
+    const approvals = rows.map((a) => {
+      let metadata: Record<string, unknown> = {};
+      try { metadata = JSON.parse(a.metadata); } catch { /* keep empty */ }
+      return {
+        id: a.id,
+        type: a.type,
+        status: a.status,
+        requestedBy: a.requestedBy,
+        requestedAt: a.requestedAt,
+        reviewedAt: a.reviewedAt,
+        metadata,
+        description: describeApproval(a.type, metadata),
+      };
+    });
+
+    return { approvals };
+  });
 
   // GET /v1/approvals?companyId=&status=pending
   server.get<{ Querystring: { companyId: string; status?: string } }>("/approvals", async (request, reply) => {

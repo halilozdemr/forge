@@ -1,7 +1,8 @@
 import { readFileSync, existsSync } from "fs";
-import { join, resolve } from "path";
+import { join } from "path";
 import matter from "gray-matter";
 import { createChildLogger } from "../utils/logger.js";
+import { OFFICIAL_AGENT_PROMPT_DIR, OFFICIAL_AGENT_SLUGS } from "./constants.js";
 
 const log = createChildLogger("agent-loader");
 
@@ -68,15 +69,10 @@ export function parseAgentMarkdown(content: string): AgentDefinition {
 }
 
 export function loadBuiltinAgents(): Map<string, AgentDefinition> {
-  const defaultsDir = resolve(join(import.meta.dirname, "defaults"));
+  const defaultsDir = OFFICIAL_AGENT_PROMPT_DIR;
   const agents = new Map<string, AgentDefinition>();
 
-  const slugs = [
-    "receptionist", "pm", "architect", "builder", "reviewer",
-    "debugger", "devops", "designer", "scrum_master",
-  ];
-
-  for (const slug of slugs) {
+  for (const slug of OFFICIAL_AGENT_SLUGS) {
     const filePath = join(defaultsDir, `${slug}.md`);
     if (existsSync(filePath)) {
       try {

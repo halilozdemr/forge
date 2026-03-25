@@ -1,12 +1,14 @@
 import { healthStore } from '../../store/store';
 
 const NAV_ITEMS = [
-  { href: '#/',        label: 'Overview',  icon: iconGrid() },
-  { href: '#/agents',  label: 'Agents',    icon: iconAgents() },
-  { href: '#/issues',  label: 'Issues',    icon: iconIssues() },
-  { href: '#/sprints', label: 'Sprints',   icon: iconSprints() },
-  { href: '#/queue',   label: 'Queue',     icon: iconQueue() },
-  { href: '#/budget',  label: 'Budget',    icon: iconBudget() },
+  { href: '#/',            label: 'Overview',   icon: iconGrid() },
+  { href: '#/workflows',   label: 'Workflows',  icon: iconWorkflows() },
+  { href: '#/approvals',   label: 'Approvals',  icon: iconApprovals() },
+  { href: '#/agents',      label: 'Agents',     icon: iconAgents() },
+  { href: '#/issues',      label: 'Issues',     icon: iconIssues() },
+  { href: '#/sprints',     label: 'Sprints',    icon: iconSprints() },
+  { href: '#/queue',       label: 'Queue',      icon: iconQueue() },
+  { href: '#/budget',      label: 'Budget',     icon: iconBudget() },
 ];
 
 export function Sidebar() {
@@ -54,13 +56,36 @@ export function Sidebar() {
   const updateActive = () => {
     const hash = window.location.hash || '#/';
     nav.querySelectorAll('.sidebar-nav-link').forEach(a => {
-      a.classList.toggle('active', a.getAttribute('href') === hash);
+      const href = a.getAttribute('href') ?? '';
+      const isActive = href === '#/'
+        ? hash === '#/'
+        : hash === href || hash.startsWith(href + '/');
+      a.classList.toggle('active', isActive);
     });
   };
   window.addEventListener('hashchange', updateActive);
   updateActive();
 
   return nav;
+}
+
+function iconApprovals() {
+  return `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" xmlns="http://www.w3.org/2000/svg">
+    <path d="M2 8a6 6 0 1012 0A6 6 0 002 8z"/>
+    <path d="M5.5 8.5l2 2 3-3.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>`;
+}
+
+function iconWorkflows() {
+  return `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" xmlns="http://www.w3.org/2000/svg">
+    <rect x="1.5" y="2" width="4" height="3" rx="0.75"/>
+    <rect x="6" y="2" width="4" height="3" rx="0.75"/>
+    <rect x="10.5" y="2" width="4" height="3" rx="0.75"/>
+    <path d="M3.5 5v2.5h4V5" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="3.5" y="7.5" width="4" height="3" rx="0.75"/>
+    <path d="M5.5 10.5V13" stroke-linecap="round"/>
+    <rect x="3.5" y="13" width="4" height="2" rx="0.75"/>
+  </svg>`;
 }
 
 function iconGrid() {

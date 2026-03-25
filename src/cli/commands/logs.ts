@@ -2,15 +2,12 @@ import { Command } from "commander";
 import { loadConfig } from "../../utils/config.js";
 
 const AGENT_COLORS: Record<string, string> = {
-  pm:           "\x1b[34m",  // blue
+  "intake-gate":"\x1b[34m",  // blue
   architect:    "\x1b[35m",  // purple
   builder:      "\x1b[32m",  // green
-  engineer:     "\x1b[32m",  // green
-  reviewer:     "\x1b[33m",  // amber
+  "quality-guard":"\x1b[33m",// amber
   devops:       "\x1b[36m",  // cyan
-  debugger:     "\x1b[31m",  // red
-  designer:     "\x1b[95m",  // bright magenta
-  scrum_master: "\x1b[90m",  // gray
+  "retrospective-analyst":"\x1b[90m", // gray
 };
 
 const RESET = "\x1b[0m";

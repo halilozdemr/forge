@@ -2,6 +2,7 @@ import type { PrismaClient } from "@prisma/client";
 import { createChildLogger } from "../utils/logger.js";
 import { FirmOrchestrator, type DispatchResult, type PipelineStep } from "./index.js";
 import { PipelineDispatcher } from "./dispatcher.js";
+import { OFFICIAL_ENTRY_AGENT_SLUG } from "../agents/constants.js";
 
 const log = createChildLogger("intake-service");
 
@@ -95,7 +96,7 @@ export class IntakeService {
       ...result,
       issueId: issue.id,
       status: pipeline?.status ?? "pending",
-      entryAgentSlug: pipeline?.entryAgentSlug ?? opts.requestedAgentSlug ?? "receptionist",
+      entryAgentSlug: pipeline?.entryAgentSlug ?? OFFICIAL_ENTRY_AGENT_SLUG,
     };
   }
 
@@ -173,14 +174,24 @@ export class IntakeService {
 
       return [
         {
-          key: "direct",
-          agentSlug: opts.requestedAgentSlug,
+          key: OFFICIAL_ENTRY_AGENT_SLUG,
+          agentSlug: OFFICIAL_ENTRY_AGENT_SLUG,
           input: combineDescription([
-            `Direct specialist request for ${opts.requestedAgentSlug}.`,
+            "Direct run request received. Normalize input into execution_brief first.",
             opts.title,
             opts.description,
           ]) ?? opts.title,
           dependsOn: [],
+        },
+        {
+          key: "direct",
+          agentSlug: opts.requestedAgentSlug,
+          input: combineDescription([
+            `Direct extension run for ${opts.requestedAgentSlug}.`,
+            opts.title,
+            opts.description,
+          ]) ?? opts.title,
+          dependsOn: [OFFICIAL_ENTRY_AGENT_SLUG],
         },
       ];
     }

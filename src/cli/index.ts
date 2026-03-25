@@ -21,6 +21,9 @@ import { labelCommand } from "./commands/label.js";
 import { exportCommand } from "./commands/export.js";
 import { importCommand } from "./commands/import.js";
 import { logsCommand } from "./commands/logs.js";
+import { workflowCommand } from "./commands/workflow.js";
+import { featureCommand } from "./commands/feature.js";
+import { bugCommand } from "./commands/bug.js";
 
 const program = new Command("forge");
 
@@ -50,5 +53,8 @@ program.addCommand(labelCommand());
 program.addCommand(exportCommand());
 program.addCommand(importCommand());
 program.addCommand(logsCommand());
+program.addCommand(workflowCommand());
+program.addCommand(featureCommand());
+program.addCommand(bugCommand());
 
 program.parse(process.argv);

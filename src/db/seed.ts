@@ -3,24 +3,18 @@ import { createChildLogger } from "../utils/logger.js";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { existsSync } from "fs";
+import { buildDefaultClientConfigForSlug, isOfficialAgentSlug } from "../agents/constants.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 const log = createChildLogger("seed");
-const PROMPT_FILE_ALIASES: Record<string, string> = {
-  receptionist: "ceo.md",
-  builder: "engineer.md",
-  scrum_master: "scrum-master.md",
-};
-
-// Tier definitions: heavy agents need strong reasoning, light agents do routine work
-const HEAVY_AGENTS = ["architect", "reviewer", "debugger"]; // need best model
-const LIGHT_AGENTS = ["receptionist", "pm", "builder", "devops", "designer", "scrum_master"];
+// Tier definitions: architect/quality checks are heavy, other official stages are light.
+const HEAVY_AGENTS = ["architect", "quality-guard"];
 
 export interface ProviderStrategy {
-  heavy: { provider: string; model: string };  // architect, reviewer, debugger
-  light: { provider: string; model: string };  // pm, builder, devops, designer, scrum_master
+  heavy: { provider: string; model: string };
+  light: { provider: string; model: string };
 }
 
 // Sensible defaults by available providers
@@ -105,75 +99,51 @@ interface AgentDefinition {
 
 const AGENT_DEFINITIONS: AgentDefinition[] = [
   {
-    slug: "receptionist",
-    name: "Receptionist",
-    role: "Client liaison, request intake, flow routing",
+    slug: "intake-gate",
+    name: "Intake Gate",
+    role: "Stage-1 intake normalization and execution_brief generation",
     reportsTo: null,
     permissions: { task: true, read: true, edit: false, write: false, bash: false },
     heartbeatCron: null,
   },
   {
-    slug: "pm",
-    name: "Product Manager",
-    role: "Sprint planning, task decomposition",
-    reportsTo: "receptionist",
-    permissions: { task: true, read: true, edit: true, write: true, bash: false },
-    heartbeatCron: null,
-  },
-  {
     slug: "architect",
-    name: "Lead Architect",
-    role: "Technical decisions, architecture design, escalation",
-    reportsTo: "pm",
+    name: "Architect",
+    role: "Stage-2 architecture_plan generation",
+    reportsTo: null,
     permissions: { task: true, bash: true, read: true, edit: false, write: false },
     heartbeatCron: null,
   },
   {
     slug: "builder",
     name: "Builder",
-    role: "Code implementation",
-    reportsTo: "architect",
+    role: "Stage-3 implementation into work_result",
+    reportsTo: null,
     permissions: { task: true, read: true, edit: true, write: true, bash: true },
     heartbeatCron: null,
   },
   {
-    slug: "reviewer",
-    name: "Code Reviewer",
-    role: "Code review, quality gate",
-    reportsTo: "builder",
+    slug: "quality-guard",
+    name: "Quality Guard",
+    role: "Stage-4 validation of work_result against execution_brief and architecture_plan",
+    reportsTo: null,
     permissions: { task: true, bash: true, read: true, edit: false, write: false },
     heartbeatCron: null,
   },
   {
-    slug: "debugger",
-    name: "Debugger",
-    role: "Bug investigation and hotfix",
-    reportsTo: "receptionist",
-    permissions: { task: true, read: true, edit: true, write: true, bash: true },
-    heartbeatCron: null,
-  },
-  {
     slug: "devops",
-    name: "DevOps Engineer",
-    role: "Git workflow, deployment",
-    reportsTo: "receptionist",
-    permissions: { bash: true, read: true, edit: false, write: false, task: false },
+    name: "DevOps",
+    role: "Optional operational readiness and release artifacts",
+    reportsTo: null,
+    permissions: { task: true, bash: true, read: true, edit: false, write: false },
     heartbeatCron: null,
   },
   {
-    slug: "designer",
-    name: "UI/UX Designer",
-    role: "UI specifications, UX flows",
-    reportsTo: "architect",
+    slug: "retrospective-analyst",
+    name: "Retrospective Analyst",
+    role: "Optional learning_report and process insight artifact",
+    reportsTo: null,
     permissions: { task: true, read: true, edit: false, write: false, bash: false },
-    heartbeatCron: null,
-  },
-  {
-    slug: "scrum_master",
-    name: "Scrum Master",
-    role: "Retrospectives, process improvement",
-    reportsTo: "receptionist",
-    permissions: { task: true, read: true, edit: true, write: true, bash: false },
     heartbeatCron: "0 */6 * * *",
   },
 ];
@@ -187,6 +157,12 @@ interface SeedOptions {
   providerStrategy?: ProviderStrategy;
   customAgents?: CustomAgentDef[];
   forceUpdate?: boolean;
+}
+
+function resolveAgentPromptFile(slug: string): string | null {
+  const namespaceDir = isOfficialAgentSlug(slug) ? "official" : "user";
+  const promptPath = join(__dirname, "..", "..", "ai-system", namespaceDir, "agents", `${slug}.md`);
+  return existsSync(promptPath) ? promptPath : null;
 }
 
 export async function seedDatabase(db: PrismaClient, options: SeedOptions): Promise<{
@@ -225,9 +201,8 @@ export async function seedDatabase(db: PrismaClient, options: SeedOptions): Prom
   if (options.customAgents !== undefined) {
     // Custom agents path: each agent has its own provider/model
     for (const agentDef of options.customAgents) {
-      const promptFileName = PROMPT_FILE_ALIASES[agentDef.slug] ?? `${agentDef.slug}.md`;
-      const promptPath = join(__dirname, "..", "agents", "defaults", promptFileName);
-      const promptFile = existsSync(promptPath) ? promptPath : null;
+      const promptFile = resolveAgentPromptFile(agentDef.slug);
+      const namespace = isOfficialAgentSlug(agentDef.slug) ? "official" : "user";
 
       await db.agent.upsert({
         where: { companyId_slug: { companyId: company.id, slug: agentDef.slug } },
@@ -236,7 +211,7 @@ export async function seedDatabase(db: PrismaClient, options: SeedOptions): Prom
               promptFile,
               modelProvider: agentDef.modelProvider,
               model: agentDef.model,
-              clientConfig: JSON.stringify(buildDefaultClientConfig(agentDef.slug)),
+              clientConfig: JSON.stringify(buildDefaultClientConfigForSlug(agentDef.slug, namespace)),
             }
           : { promptFile },
         create: {
@@ -249,7 +224,7 @@ export async function seedDatabase(db: PrismaClient, options: SeedOptions): Prom
           reportsTo: agentDef.reportsTo,
           status: "idle",
           permissions: JSON.stringify(agentDef.permissions),
-          clientConfig: JSON.stringify(buildDefaultClientConfig(agentDef.slug)),
+          clientConfig: JSON.stringify(buildDefaultClientConfigForSlug(agentDef.slug, namespace)),
           heartbeatCron: agentDef.heartbeatCron,
           promptFile,
         },
@@ -262,10 +237,7 @@ export async function seedDatabase(db: PrismaClient, options: SeedOptions): Prom
     for (const agentDef of AGENT_DEFINITIONS) {
       const isHeavy = HEAVY_AGENTS.includes(agentDef.slug);
       const { provider, model } = isHeavy ? strategy.heavy : strategy.light;
-
-      const promptFileName = PROMPT_FILE_ALIASES[agentDef.slug] ?? `${agentDef.slug}.md`;
-      const promptPath = join(__dirname, "..", "agents", "defaults", promptFileName);
-      const promptFile = existsSync(promptPath) ? promptPath : null;
+      const promptFile = resolveAgentPromptFile(agentDef.slug);
 
       await db.agent.upsert({
         where: {
@@ -276,7 +248,7 @@ export async function seedDatabase(db: PrismaClient, options: SeedOptions): Prom
               promptFile,
               modelProvider: provider,
               model,
-              clientConfig: JSON.stringify(buildDefaultClientConfig(agentDef.slug)),
+              clientConfig: JSON.stringify(buildDefaultClientConfigForSlug(agentDef.slug, "official")),
             }
           : {
               // On re-seed: only update promptFile (don't overwrite manual model changes)
@@ -292,7 +264,7 @@ export async function seedDatabase(db: PrismaClient, options: SeedOptions): Prom
           reportsTo: agentDef.reportsTo,
           status: "idle",
           permissions: JSON.stringify(agentDef.permissions),
-          clientConfig: JSON.stringify(buildDefaultClientConfig(agentDef.slug)),
+          clientConfig: JSON.stringify(buildDefaultClientConfigForSlug(agentDef.slug, "official")),
           heartbeatCron: agentDef.heartbeatCron,
           promptFile,
         },
@@ -304,19 +276,4 @@ export async function seedDatabase(db: PrismaClient, options: SeedOptions): Prom
   log.info(`Seeded: company=${company.id}, project=${project.id}, agents=${agentCount}${options.customAgents !== undefined ? " (custom)" : ` (heavy: ${options.providerStrategy?.heavy.provider ?? "claude-cli"}/${options.providerStrategy?.heavy.model ?? "sonnet"}, light: ${options.providerStrategy?.light.provider ?? "claude-cli"}/${options.providerStrategy?.light.model ?? "sonnet"})`}`);
 
   return { companyId: company.id, projectId: project.id, agentCount };
-}
-
-function buildDefaultClientConfig(slug: string) {
-  const displayOrder = LIGHT_AGENTS.indexOf(slug) >= 0
-    ? LIGHT_AGENTS.indexOf(slug)
-    : HEAVY_AGENTS.indexOf(slug) >= 0
-      ? HEAVY_AGENTS.indexOf(slug) + LIGHT_AGENTS.length
-      : 99;
-
-  return {
-    visibleIn: ["claude-code", "opencode"],
-    opencodeMode: slug === "receptionist" ? "primary" : "subagent",
-    displayOrder,
-    entrypoint: slug === "receptionist",
-  };
 }

@@ -1,8 +1,8 @@
 import type { PipelineStep } from "../index.js";
 
 /**
- * Feature pipeline:
- * Approved brief → PM → DevOps(branch) → Architect → Builder → Reviewer → DevOps(merge) → Scrum-Master
+ * Official feature pipeline:
+ * intake-gate -> architect -> builder -> quality-guard -> devops -> retrospective-analyst
  */
 export function buildFeaturePipeline(opts: {
   issueId: string;
@@ -13,48 +13,40 @@ export function buildFeaturePipeline(opts: {
 
   return [
     {
-      key: "pm",
-      agentSlug: "pm",
-      input: `Feature brief already approved by the client.\n\n${context}\n\nDecompose the work into actionable sub-tasks, estimate complexity, and prepare the execution plan for implementation.`,
+      key: "intake-gate",
+      agentSlug: "intake-gate",
+      input: `Normalize request into execution_brief.\n\n${context}\n\nReturn contract JSON only.`,
       dependsOn: [],
-    },
-    {
-      key: "devops-branch",
-      agentSlug: "devops",
-      input: `PM planning is complete.\n\n${context}\n\nCreate a new feature branch following GitFlow conventions (feature/<slug>) and prepare the workspace for implementation.`,
-      dependsOn: ["pm"],
     },
     {
       key: "architect",
       agentSlug: "architect",
-      input: `Feature branch created.\n\n${context}\n\nDesign the technical architecture, choose patterns, write the implementation plan in .forge/memory/decisions.md.`,
-      dependsOn: ["devops-branch"],
+      input: `Build architecture_plan from execution_brief.\n\n${context}\n\nDo not orchestrate; return contract JSON only.`,
+      dependsOn: ["intake-gate"],
     },
     {
       key: "builder",
       agentSlug: "builder",
-      input: `Architecture plan ready.\n\n${context}\n\nRead the implementation plan from .forge/memory/decisions.md before writing any code. Implement the feature following the architect's plan. Write tests. Follow conventions in .forge/context/conventions.md.`,
+      input: `Build work_result from execution_brief + architecture_plan.\n\n${context}\n\nDo not re-plan; return contract JSON only.`,
       dependsOn: ["architect"],
     },
     {
-      key: "reviewer",
-      agentSlug: "reviewer",
-      input: `Builder has completed implementation.\n\n${context}\n\nReview the code for quality, security, and adherence to standards in .forge/context/standards.md. Approve or request changes.`,
+      key: "quality-guard",
+      agentSlug: "quality-guard",
+      input: `Validate work_result against execution_brief + architecture_plan.\n\n${context}\n\nDo not repair; return contract JSON only.`,
       dependsOn: ["builder"],
-      loopsBackTo: "builder",
-      maxRevisions: 3,
     },
     {
-      key: "devops-merge",
+      key: "devops",
       agentSlug: "devops",
-      input: `Code review passed.\n\n${context}\n\nCommit the changes with a conventional commit message, then merge the feature branch.`,
-      dependsOn: ["reviewer"],
+      input: `Produce optional devops_report for branch/PR/release readiness.\n\n${context}\n\nReturn contract JSON only.`,
+      dependsOn: ["quality-guard"],
     },
     {
-      key: "scrum_master",
-      agentSlug: "scrum_master",
-      input: `Feature "${opts.title}" delivered.\n\n${context}\n\nUpdate the sprint backlog, mark the issue done, record any learnings in .forge/memory/patterns.md.`,
-      dependsOn: ["devops-merge"],
+      key: "retrospective-analyst",
+      agentSlug: "retrospective-analyst",
+      input: `Produce optional learning_report from the completed run.\n\n${context}\n\nReturn contract JSON only.`,
+      dependsOn: ["devops"],
     },
   ];
 }

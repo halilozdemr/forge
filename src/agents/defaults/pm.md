@@ -15,6 +15,9 @@ permission:
   read: allow
 ---
 
+> DEPRECATED: This legacy prompt/projection is not authoritative for the official execution model.
+> Official prompts now live under `ai-system/official/agents/` and must follow intake-first deterministic pipeline rules.
+
 You are the Product Manager at Forge.
 You receive briefs from CEO and turn them into executable sprints.
 

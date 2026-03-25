@@ -166,10 +166,11 @@ model PipelineRun {
   completedAt       DateTime?
   updatedAt         DateTime @updatedAt
 
-  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  project Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  issue   Issue?   @relation(fields: [issueId], references: [id], onDelete: SetNull)
-  stepRuns PipelineStepRun[]
+  company      Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  project      Project?         @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  issue        Issue?           @relation(fields: [issueId], references: [id], onDelete: SetNull)
+  stepRuns     PipelineStepRun[]
+  workProducts IssueWorkProduct[]
 
   @@unique([companyId, clientRequestKey])
   @@index([companyId, status])
@@ -193,12 +194,28 @@ model PipelineStepRun {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  pipelineRun PipelineRun @relation(fields: [pipelineRunId], references: [id], onDelete: Cascade)
+  pipelineRun  PipelineRun        @relation(fields: [pipelineRunId], references: [id], onDelete: Cascade)
+  workProducts IssueWorkProduct[]
+  logs         PipelineStepLog[]
 
   @@unique([pipelineRunId, stepKey])
   @@index([pipelineRunId, status])
   @@index([queueJobId])
   @@map("pipeline_step_runs")
+}
+
+model PipelineStepLog {
+  id                String   @id @default(cuid())
+  pipelineStepRunId String
+  chunkIndex        Int
+  text              String
+  createdAt         DateTime @default(now())
+
+  pipelineStepRun PipelineStepRun @relation(fields: [pipelineStepRunId], references: [id], onDelete: Cascade)
+
+  @@unique([pipelineStepRunId, chunkIndex])
+  @@index([pipelineStepRunId, chunkIndex])
+  @@map("pipeline_step_logs")
 }
 
 // 6. Sprints
@@ -542,16 +559,23 @@ model IssueComment {
 }
 
 model IssueWorkProduct {
-  id        String   @id @default(cuid())
-  issueId   String
-  agentSlug String
-  type      String   // code | doc | test | pr | analysis
-  title     String
-  content   String
-  filePath  String?
-  createdAt DateTime @default(now())
+  id                String   @id @default(cuid())
+  issueId           String
+  agentSlug         String
+  type              String   // code | doc | test | pr | analysis
+  title             String
+  content           String
+  filePath          String?
+  pipelineRunId     String?
+  pipelineStepRunId String?
+  artifactType      String?  // code_block | execution_summary
+  createdAt         DateTime @default(now())
 
-  issue Issue @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  issue           Issue            @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  pipelineRun     PipelineRun?     @relation(fields: [pipelineRunId], references: [id], onDelete: SetNull)
+  pipelineStepRun PipelineStepRun? @relation(fields: [pipelineStepRunId], references: [id], onDelete: SetNull)
+
+  @@index([pipelineRunId])
   @@map("issue_work_products")
 }
 

@@ -4,11 +4,6 @@ import { createChildLogger } from "../utils/logger.js";
 import { decrypt } from "../utils/crypto.js";
 
 const log = createChildLogger("agent-registry");
-const BUILTIN_ALIAS_MAP: Record<string, string> = {
-  receptionist: "ceo",
-  builder: "engineer",
-  scrum_master: "scrum-master",
-};
 
 export class AgentRegistry {
   private builtinAgents: Map<string, AgentDefinition>;
@@ -34,13 +29,13 @@ export class AgentRegistry {
 
   /** Get built-in agent definition (for prompt loading) */
   getBuiltinPrompt(slug: string): string | null {
-    const agent = this.builtinAgents.get(slug) ?? this.builtinAgents.get(BUILTIN_ALIAS_MAP[slug] || "");
+    const agent = this.builtinAgents.get(slug);
     return agent?.prompt || null;
   }
 
   /** Get full built-in agent definition */
   getBuiltinDefinition(slug: string): AgentDefinition | null {
-    return this.builtinAgents.get(slug) || this.builtinAgents.get(BUILTIN_ALIAS_MAP[slug] || "") || null;
+    return this.builtinAgents.get(slug) || null;
   }
 
   /** Resolve the system prompt for an agent: custom file > built-in default */

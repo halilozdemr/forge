@@ -164,10 +164,13 @@ export async function startMcpServer() {
   server.tool(
     "forge_list_agents",
     "List all agents in the company",
-    {},
-    async () => {
+    {
+      namespace: z.enum(["official", "user"]).optional().describe("Optional namespace filter"),
+    },
+    async ({ namespace }) => {
       const cid = await getCompanyId();
-      return fetchApi(`/agents?companyId=${cid}`);
+      const suffix = namespace ? `&namespace=${namespace}` : "";
+      return fetchApi(`/agents?companyId=${cid}${suffix}`);
     }
   );
 
@@ -175,7 +178,7 @@ export async function startMcpServer() {
     "forge_get_agent",
     "Get detailed status and configuration of a specific agent by slug",
     {
-      slug: z.string().describe("The slug identifier of the agent (e.g., 'receptionist')"),
+      slug: z.string().describe("The slug identifier of the agent (e.g., 'intake-gate')"),
     },
     async ({ slug }) => {
       const cid = await getCompanyId();
@@ -192,6 +195,7 @@ export async function startMcpServer() {
       role: z.string().describe("Role description"),
       modelProvider: z.string().describe("Provider (e.g., 'openrouter', 'claude-cli')"),
       model: z.string().describe("Model ID (e.g., 'deepseek/deepseek-v3.2')"),
+      namespace: z.enum(["official", "user"]).default("user").describe("Agent namespace; official names are reserved"),
       status: z.enum(["active", "idle", "paused"]).default("idle"),
       systemPrompt: z.string().describe("Agent's behavior instructions"),
       permissions: z.record(z.string(), z.boolean()).optional().describe("E.g., { 'task': true }"),
@@ -320,7 +324,7 @@ export async function startMcpServer() {
     "Legacy admin tool: dispatch an agent to execute an issue manually. Returns a jobId that you must check asynchronously.",
     {
       id: z.string().describe("The issue ID to run"),
-      agentSlug: z.string().describe("The agent to assign (e.g., 'builder', 'pm', 'architect')"),
+      agentSlug: z.string().describe("The agent to assign (e.g., 'builder', 'architect', 'quality-guard')"),
       instructions: z.string().describe("Instructions for the agent to execute this issue"),
     },
     async ({ id, agentSlug, instructions }) => {
@@ -379,7 +383,7 @@ export async function startMcpServer() {
 
   server.tool(
     "forge_run_agent_direct",
-    "Run a direct specialist request as a persisted backend pipeline with a single agent step.",
+    "Legacy non-authoritative helper for direct extension runs. Official flow remains intake-first.",
     {
       source: z.enum(["claude-code", "opencode", "api"]).default("api"),
       requestedAgentSlug: z.string().describe("Specialist slug to run directly"),

@@ -11,48 +11,52 @@ const baseIssue = {
 };
 
 describe("pipeline builders", () => {
-  it("builds feature pipeline starting from PM for client-approved intake", () => {
+  it("builds feature pipeline from intake-gate through official stage sequence", () => {
     const steps = buildFeaturePipeline(baseIssue);
 
     expect(steps.map((step) => step.key)).toEqual([
-      "pm",
-      "devops-branch",
+      "intake-gate",
       "architect",
       "builder",
-      "reviewer",
-      "devops-merge",
-      "scrum_master",
+      "quality-guard",
+      "devops",
+      "retrospective-analyst",
     ]);
 
     expect(steps.map((step) => step.agentSlug)).toEqual([
-      "pm",
-      "devops",
+      "intake-gate",
       "architect",
       "builder",
-      "reviewer",
+      "quality-guard",
       "devops",
-      "scrum_master",
+      "retrospective-analyst",
     ]);
   });
 
-  it("builds bugfix, refactor, and release pipelines on runtime slugs", () => {
+  it("builds bugfix, refactor, and release pipelines on official slugs", () => {
     expect(buildBugfixPipeline(baseIssue).map((step) => step.agentSlug)).toEqual([
-      "debugger",
-      "reviewer",
+      "intake-gate",
+      "architect",
+      "builder",
+      "quality-guard",
       "devops",
     ]);
 
     expect(buildRefactorPipeline(baseIssue).map((step) => step.agentSlug)).toEqual([
+      "intake-gate",
       "architect",
       "builder",
-      "reviewer",
+      "quality-guard",
       "devops",
     ]);
 
     expect(buildReleasePipeline(baseIssue).map((step) => step.key)).toEqual([
-      "devops-build",
-      "devops-release",
-      "scrum_master",
+      "intake-gate",
+      "architect",
+      "builder",
+      "quality-guard",
+      "devops",
+      "retrospective-analyst",
     ]);
   });
 });

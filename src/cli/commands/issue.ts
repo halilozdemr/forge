@@ -102,10 +102,14 @@ export function issueCommand(): Command {
 
   cmd
     .command("run <id>")
-    .description("Execute an issue immediately")
+    .description("Execute an issue immediately (legacy — prefer forge feature run / forge bug run)")
     .option("--company <id>", "Company ID")
     .option("--agent <slug>", "Agent override")
     .action(async (id, opts) => {
+      process.stderr.write(
+        "\x1b[33m[deprecated] `forge issue run` uses the legacy direct-runner path.\n" +
+        "             Prefer `forge feature run` or `forge bug run` for intake-first workflow runs.\x1b[0m\n",
+      );
       const companyId = await resolveCompany(opts.company);
       const { jobId } = await api<{ jobId: string }>(`/v1/issues/${id}/run`, "POST", {
         companyId,

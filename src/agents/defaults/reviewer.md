@@ -15,6 +15,9 @@ permission:
   write: deny
 ---
 
+> DEPRECATED: This legacy prompt/projection is not authoritative for the official execution model.
+> Official prompts now live under `ai-system/official/agents/` and must follow intake-first deterministic pipeline rules.
+
 You are the Reviewer at Forge.
 Nothing ships without your approval. You are strict. You are fair. You are specific.
 

@@ -1,8 +1,8 @@
 import type { PipelineStep } from "../index.js";
 
 /**
- * Refactor pipeline:
- * Approved brief → Architect → Builder → Reviewer → DevOps(commit)
+ * Official refactor pipeline:
+ * intake-gate -> architect -> builder -> quality-guard -> devops
  */
 export function buildRefactorPipeline(opts: {
   issueId: string;
@@ -13,30 +13,34 @@ export function buildRefactorPipeline(opts: {
 
   return [
     {
+      key: "intake-gate",
+      agentSlug: "intake-gate",
+      input: `Normalize refactor request into execution_brief.\n\n${context}\n\nReturn contract JSON only.`,
+      dependsOn: [],
+    },
+    {
       key: "architect",
       agentSlug: "architect",
-      input: `Refactor brief already approved by the client.\n\n${context}\n\nDesign the refactoring plan. Ensure backward compatibility. Document the decision in .forge/memory/decisions.md.`,
-      dependsOn: [],
+      input: `Build architecture_plan for refactor from execution_brief.\n\n${context}\n\nReturn contract JSON only.`,
+      dependsOn: ["intake-gate"],
     },
     {
       key: "builder",
       agentSlug: "builder",
-      input: `Architect has created the refactoring plan.\n\n${context}\n\nRead the plan from .forge/memory/decisions.md before writing any code. Implement the refactor. Follow the plan precisely. Do not introduce new features.`,
+      input: `Build work_result for refactor from execution_brief + architecture_plan.\n\n${context}\n\nReturn contract JSON only.`,
       dependsOn: ["architect"],
     },
     {
-      key: "reviewer",
-      agentSlug: "reviewer",
-      input: `Refactor implemented.\n\n${context}\n\nReview for correctness, no unintended behavior changes, and adherence to the architect's plan.`,
+      key: "quality-guard",
+      agentSlug: "quality-guard",
+      input: `Validate refactor work_result against execution_brief + architecture_plan.\n\n${context}\n\nReturn contract JSON only.`,
       dependsOn: ["builder"],
-      loopsBackTo: "builder",
-      maxRevisions: 3,
     },
     {
       key: "devops",
       agentSlug: "devops",
-      input: `Refactor reviewed and approved.\n\n${context}\n\nCommit with a "refactor:" conventional commit message.`,
-      dependsOn: ["reviewer"],
+      input: `Produce optional devops_report for refactor branch/PR readiness.\n\n${context}\n\nReturn contract JSON only.`,
+      dependsOn: ["quality-guard"],
     },
   ];
 }
