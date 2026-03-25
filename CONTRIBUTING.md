@@ -9,7 +9,7 @@ Thank you for your interest in contributing. Here is everything you need to get 
 - At least one of: Claude Code CLI, Gemini CLI, or an API key for OpenRouter / Anthropic
 
 ```bash
-git clone https://github.com/your-org/forge.git
+git clone https://github.com/halilozdemr/forge.git
 cd forge
 npm install
 cp .env.example .env   # fill in any API keys you want to use

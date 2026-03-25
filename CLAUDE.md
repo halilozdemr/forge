@@ -76,10 +76,12 @@ npm run db:push      # Push schema changes without migration
 
 ## Pipeline Architecture
 Each issue type maps to a pipeline of `PipelineStep[]` with `dependsOn` dependency tracking:
-- **feature**: pm → devops(branch) → architect → builder → reviewer → devops(merge) → scrum_master
-- **bug**: debugger → builder → reviewer → devops(merge)
-- **refactor**: architect → builder → reviewer → devops(merge)
-- **release**: devops(tag+publish)
+- **feature**: `intake-gate` → `architect` → `builder` → `quality-guard` → `devops` → `retrospective-analyst`
+- **bug**: `intake-gate` → `architect` → `builder` → `quality-guard` → `devops`
+- **refactor**: `intake-gate` → `architect` → `builder` → `quality-guard` → `devops`
+- **release**: `intake-gate` → `architect` → `builder` → `quality-guard` → `devops` → `retrospective-analyst`
+
+Stage definitions live in `src/orchestrator/pipelines/`.
 
 ## Runner Providers
 `src/bridge/runners/factory.ts` maps `modelProvider` to runner class. Supported values:

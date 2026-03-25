@@ -1,6 +1,6 @@
 # Forge
 
-A local-first AI agent orchestration platform. Spawn a team of AI agents, submit tasks via CLI or Web UI, and watch them execute a deterministic pipeline — intake → architect → builder → review → deploy.
+A local-first AI agent orchestration platform. Spawn a team of AI agents, submit tasks via CLI or Web UI, and watch them execute a deterministic pipeline — `intake-gate` → `architect` → `builder` → `quality-guard` → `devops`.
 
 Forge runs entirely on your machine. It uses whatever AI CLI or API key you already have.
 
@@ -39,7 +39,7 @@ Each request goes through a staged pipeline. Each stage runs as a separate agent
 | **feature** | `intake-gate` → `architect` → `builder` → `quality-guard` → `devops` → `retrospective-analyst` |
 | **bug** | `intake-gate` → `architect` → `builder` → `quality-guard` → `devops` |
 | **refactor** | `intake-gate` → `architect` → `builder` → `quality-guard` → `devops` |
-| **release** | `devops` |
+| **release** | `intake-gate` → `architect` → `builder` → `quality-guard` → `devops` → `retrospective-analyst` |
 
 Stages run sequentially with `dependsOn` resolution. Each stage produces a typed artifact stored in the `IssueWorkProduct` table.
 
@@ -258,7 +258,7 @@ Open `http://localhost:3131` after `forge start`.
 | Workflow Detail | `#/workflows/:id` | Step timeline, cancel, retry failed steps, view per-step logs, view artifacts |
 | Approvals | `#/approvals` | Approve or reject pending approval requests |
 | Agents | `#/agents` | List and inspect agent configuration |
-| Issues | `#/issues` | Legacy issue list |
+| Issues | `#/issues` | All submitted issues (read-only view) |
 | Queue | `#/queue` | Raw job queue state |
 | Budget | `#/budget` | Cost tracking and policy overview |
 
