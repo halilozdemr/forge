@@ -15,37 +15,37 @@ export function buildFeaturePipeline(opts: {
     {
       key: "intake-gate",
       agentSlug: "intake-gate",
-      input: `Normalize request into execution_brief.\n\n${context}\n\nReturn contract JSON only.`,
+      input: `Normalize request into execution_brief.\n\n${context}`,
       dependsOn: [],
     },
     {
       key: "architect",
       agentSlug: "architect",
-      input: `Build architecture_plan from execution_brief.\n\n${context}\n\nDo not orchestrate; return contract JSON only.`,
+      input: `Build architecture_plan from execution_brief.\n\n${context}`,
       dependsOn: ["intake-gate"],
     },
     {
       key: "builder",
       agentSlug: "builder",
-      input: `Build work_result from execution_brief + architecture_plan.\n\n${context}\n\nDo not re-plan; return contract JSON only.`,
+      input: `Implement the feature by creating actual files in the workspace, then return work_result JSON.\n\n${context}`,
       dependsOn: ["architect"],
     },
     {
       key: "quality-guard",
       agentSlug: "quality-guard",
-      input: `Validate work_result against execution_brief + architecture_plan.\n\n${context}\n\nDo not repair; return contract JSON only.`,
+      input: `Validate the work_result artifacts against execution_brief and architecture_plan. The prior stage outputs are provided below.\n\n${context}`,
       dependsOn: ["builder"],
     },
     {
       key: "devops",
       agentSlug: "devops",
-      input: `Produce optional devops_report for branch/PR/release readiness.\n\n${context}\n\nReturn contract JSON only.`,
+      input: `Produce devops_report for branch/PR/release readiness.\n\n${context}`,
       dependsOn: ["quality-guard"],
     },
     {
       key: "retrospective-analyst",
       agentSlug: "retrospective-analyst",
-      input: `Produce optional learning_report from the completed run.\n\n${context}\n\nReturn contract JSON only.`,
+      input: `Produce learning_report from the completed run. Only report success if work_result.artifacts contains actual created files.\n\n${context}`,
       dependsOn: ["devops"],
     },
   ];

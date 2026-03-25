@@ -18,7 +18,7 @@ function parseDependsOn(value: string): string[] {
   }
 }
 
-function summarizeResult(result: string, maxLength = 500): string {
+function summarizeResult(result: string, maxLength = 8000): string {
   if (result.length <= maxLength) return result;
   return `${result.slice(0, maxLength)}...`;
 }
@@ -449,6 +449,20 @@ export class PipelineDispatcher {
   ): Promise<string> {
     const projectPath = pipelineRun.issue?.project?.path ?? process.cwd();
 
+    // Inject outputs from all prerequisite steps so each stage receives full context
+    const dependsOn = parseDependsOn(stepRun.dependsOn);
+    const priorOutputSections = dependsOn
+      .map((key) => {
+        const prior = pipelineRun.stepRuns.find((s) => s.stepKey === key);
+        return prior?.resultSummary ? `## Output from ${key}\n${prior.resultSummary}` : null;
+      })
+      .filter((s): s is string => s !== null);
+
+    const enrichedInput =
+      priorOutputSections.length > 0
+        ? `${stepRun.inputSnapshot}\n\n---\n${priorOutputSections.join("\n\n")}`
+        : stepRun.inputSnapshot;
+
     const agent = await this.db.agent.findUnique({
       where: { companyId_slug: { companyId: pipelineRun.companyId, slug: stepRun.agentSlug } },
     });
@@ -463,7 +477,7 @@ export class PipelineDispatcher {
       companyId: pipelineRun.companyId,
       agentSlug: stepRun.agentSlug,
       agentId: agent.id,
-      input: stepRun.inputSnapshot,
+      input: enrichedInput,
       issueId: pipelineRun.issueId ?? undefined,
       projectPath,
       pipelineRunId: pipelineRun.id,

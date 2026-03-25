@@ -31,8 +31,8 @@ export class OpenRouterRunner implements AgentRunner {
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${apiKey}`,
-          "HTTP-Referer": "https://the-firm.dev",
-          "X-Title": "The Firm v3",
+          "HTTP-Referer": "https://forge.dev",
+          "X-Title": "Forge v3",
         },
         body: JSON.stringify({
           model: config.model,

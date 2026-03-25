@@ -51,7 +51,7 @@ export class AgentRegistry {
     }
 
     // Fall back to built-in
-    let prompt = this.getBuiltinPrompt(agent.slug) || `You are the ${agent.name} at The Firm.`;
+    let prompt = this.getBuiltinPrompt(agent.slug) || `You are the ${agent.name} agent.`;
 
     // Resolve secrets
     const companySecrets = await this.db.companySecret.findMany({

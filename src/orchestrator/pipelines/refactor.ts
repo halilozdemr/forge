@@ -15,31 +15,31 @@ export function buildRefactorPipeline(opts: {
     {
       key: "intake-gate",
       agentSlug: "intake-gate",
-      input: `Normalize refactor request into execution_brief.\n\n${context}\n\nReturn contract JSON only.`,
+      input: `Normalize refactor request into execution_brief.\n\n${context}`,
       dependsOn: [],
     },
     {
       key: "architect",
       agentSlug: "architect",
-      input: `Build architecture_plan for refactor from execution_brief.\n\n${context}\n\nReturn contract JSON only.`,
+      input: `Build architecture_plan for refactor from execution_brief.\n\n${context}`,
       dependsOn: ["intake-gate"],
     },
     {
       key: "builder",
       agentSlug: "builder",
-      input: `Build work_result for refactor from execution_brief + architecture_plan.\n\n${context}\n\nReturn contract JSON only.`,
+      input: `Perform the refactor by editing actual files in the workspace, then return work_result JSON.\n\n${context}`,
       dependsOn: ["architect"],
     },
     {
       key: "quality-guard",
       agentSlug: "quality-guard",
-      input: `Validate refactor work_result against execution_brief + architecture_plan.\n\n${context}\n\nReturn contract JSON only.`,
+      input: `Validate the refactor work_result artifacts against execution_brief and architecture_plan. The prior stage outputs are provided below.\n\n${context}`,
       dependsOn: ["builder"],
     },
     {
       key: "devops",
       agentSlug: "devops",
-      input: `Produce optional devops_report for refactor branch/PR readiness.\n\n${context}\n\nReturn contract JSON only.`,
+      input: `Produce devops_report for refactor branch/PR readiness.\n\n${context}`,
       dependsOn: ["quality-guard"],
     },
   ];

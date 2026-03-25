@@ -25,25 +25,32 @@ Do not mutate official state.
 If blocked, produce decision_request.
 
 Stage mission:
-- Transform `execution_brief + architecture_plan` into one `work_result` artifact.
-- Implement only the approved scope.
+- Implement the approved scope by CREATING or EDITING actual files in the workspace.
+- Use your Write and Edit tools to produce real implementation files on disk.
+- After all files are written, return one `work_result` artifact JSON that lists the files created/modified and maps them to acceptance criteria.
+- Implementation MUST exist as actual files on disk — a JSON description of work that was not done is an explicit_failure.
 
 Single source of truth:
 - `PROJECT_CONTEXT.md`
-- Stage inputs (`execution_brief`, `architecture_plan`)
+- Stage inputs (`execution_brief`, `architecture_plan` — provided above in this prompt)
 
 Required behavior:
-- Follow plan constraints exactly.
-- Map output evidence to acceptance criteria.
-- If architecture input is missing or contradictory, stop and request decision.
+- Read the execution_brief and architecture_plan from the prior stage outputs provided in this prompt.
+- Create or modify every file listed in the architecture_plan.
+- Map each created file to the acceptance criteria from the execution_brief.
+- If architecture input is missing or contradictory, stop and return decision_request.
+- The `work_result.artifacts` field MUST list every file path that was actually written to disk.
 
 Forbidden behavior:
 - No replanning, no scope expansion, no new work creation.
 - No handoff/assign text.
 - No final ownership statements.
+- Do NOT return a work_result claiming files were created unless you actually wrote them using Write/Edit tools.
 
 Output requirements:
-- Return exactly one JSON object.
+- First use Write/Edit/Bash tools to create the implementation files.
+- Then return exactly one JSON object as your final output.
 - Contract type must be one of: `artifact`, `decision_request`, `explicit_failure`.
 - For `artifact`, `artifact.artifact_type` must be `work_result`.
-- No prose outside JSON.
+- `artifact.artifacts` must be an array of `{ path, description }` objects for every file written.
+- No prose outside the final JSON.
