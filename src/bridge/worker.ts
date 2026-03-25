@@ -10,16 +10,17 @@ import { updateSessionUsage, shouldRotate, rotateSession } from "./session.js";
 import { decrypt, redactSecrets } from "../utils/crypto.js";
 import { emit } from "../events/emitter.js";
 import { PipelineDispatcher } from "../orchestrator/dispatcher.js";
+import { sanitizeStreamChunk, extractStreamJsonText, appendLiveBuffer, LIVE_SUMMARY_MAX_CHARS } from "./stream-helpers.js";
 
 
 const log = createChildLogger("worker");
 const LEASE_MS = 30_000;
 const LEASE_RENEW_MS = 10_000;
 const WORKER_ID = `worker-${process.pid}`;
-const LIVE_SUMMARY_MAX_CHARS = 1600;
 const LIVE_SUMMARY_FLUSH_MS = 1500;
 const LIVE_SUMMARY_MIN_CHARS = 120;
-const ANSI_ESCAPE_PATTERN = /\u001b\[[0-9;]*m/g;
+const LOG_FLUSH_INTERVAL_MS = 2000;
+const LOG_FLUSH_BATCH_SIZE = 50;
 
 let isRunning = false;
 let pollingTimer: NodeJS.Timeout | null = null;
@@ -57,60 +58,19 @@ export function createAgentWorker(concurrency = 3): any {
   };
 }
 
-function sanitizeStreamChunk(chunk: string): string {
-  return chunk.replace(ANSI_ESCAPE_PATTERN, "").replace(/\r/g, "");
-}
-
-/**
- * Extract human-readable text from a stream-json line.
- * If the line is a stream-json event, returns the text content.
- * Otherwise returns the line as-is.
- */
-function extractStreamJsonText(line: string): string | null {
-  if (!line.startsWith("{")) return line;
-  try {
-    const event = JSON.parse(line) as Record<string, unknown>;
-    // Skip non-content events
-    if (event.type === "result" || event.type === "system") return null;
-    // assistant message with text content
-    if (event.type === "assistant") {
-      const msg = event.message as Record<string, unknown> | undefined;
-      const content = msg?.content;
-      if (Array.isArray(content)) {
-        const texts = content
-          .filter((c: any) => c.type === "text")
-          .map((c: any) => c.text as string)
-          .join("");
-        return texts || null;
-      }
-    }
-    // tool_use or other structured events — skip
-    return null;
-  } catch {
-    return line;
-  }
-}
-
-function appendLiveBuffer(buffer: string, chunk: string): string {
-  const next = `${buffer}${chunk}`;
-  return next.length > LIVE_SUMMARY_MAX_CHARS
-    ? next.slice(next.length - LIVE_SUMMARY_MAX_CHARS)
-    : next;
-}
 
 function resolveAgentTimeoutMs(agentSlug: string, requestedTimeoutMs?: number): number {
   if (requestedTimeoutMs) return requestedTimeoutMs;
 
   switch (agentSlug) {
-    case "builder":
+    case "intake-gate":
+      return 2 * 60 * 1000;
     case "architect":
-    case "reviewer":
-    case "debugger":
+    case "builder":
+    case "quality-guard":
       return 8 * 60 * 1000;
     case "devops":
-    case "pm":
-    case "designer":
-    case "scrum_master":
+    case "retrospective-analyst":
       return 4 * 60 * 1000;
     default:
       return 3 * 60 * 1000;
@@ -192,6 +152,28 @@ async function processJob(job: any): Promise<void> {
     let liveBufferDirty = false;
     let liveFlushPromise: Promise<void> | null = null;
 
+    // Step log batching — never awaited inside onStream
+    let logBatch: Array<{ text: string; chunkIndex: number }> = [];
+    let logChunkIndex = 0;
+    let lastLogFlushAt = 0;
+    let logFlushPromise: Promise<void> | null = null;
+
+    const flushLogs = async (force = false) => {
+      if (!data.pipelineStepRunId || logBatch.length === 0) return;
+      const now = Date.now();
+      if (!force && (now - lastLogFlushAt) < LOG_FLUSH_INTERVAL_MS && logBatch.length < LOG_FLUSH_BATCH_SIZE) return;
+      const toFlush = logBatch.splice(0);
+      if (toFlush.length === 0) return;
+      lastLogFlushAt = now;
+      await db.pipelineStepLog.createMany({
+        data: toFlush.map(item => ({
+          pipelineStepRunId: data.pipelineStepRunId!,
+          chunkIndex: item.chunkIndex,
+          text: item.text,
+        })),
+      });
+    };
+
     const flushLiveSummary = async (force = false) => {
       if (!data.pipelineStepRunId || !issueId || !liveBufferDirty) return;
 
@@ -247,6 +229,9 @@ async function processJob(job: any): Promise<void> {
             emit({ type: "heartbeat.log", agentSlug, line: t });
             liveBuffer = appendLiveBuffer(liveBuffer, `${t}\n`);
             liveBufferDirty = true;
+            if (data.pipelineStepRunId) {
+              logBatch.push({ text: t, chunkIndex: logChunkIndex++ });
+            }
           }
         }
 
@@ -260,6 +245,12 @@ async function processJob(job: any): Promise<void> {
             liveFlushPromise = null;
           });
         }
+
+        if (data.pipelineStepRunId && !logFlushPromise) {
+          logFlushPromise = flushLogs().finally(() => {
+            logFlushPromise = null;
+          });
+        }
       }
     });
 
@@ -269,10 +260,14 @@ async function processJob(job: any): Promise<void> {
         emit({ type: "heartbeat.log", agentSlug, line: text });
         liveBuffer = appendLiveBuffer(liveBuffer, `${text}\n`);
         liveBufferDirty = true;
+        if (data.pipelineStepRunId) {
+          logBatch.push({ text, chunkIndex: logChunkIndex++ });
+        }
       }
     }
 
     await flushLiveSummary(true);
+    await flushLogs(true);
 
     if (result.tokenUsage) {
       const costUsd = estimateCost(modelProvider, agentModel, result.tokenUsage.input, result.tokenUsage.output);
@@ -359,7 +354,7 @@ async function processJob(job: any): Promise<void> {
     if (result.success && issueId) {
       // Create work products
       const output = result.output || "";
-      
+
       // 1. Extract code blocks
       const codeBlockRegex = /```(?:\w+)?\n([\s\S]*?)```/g;
       let match;
@@ -373,6 +368,9 @@ async function processJob(job: any): Promise<void> {
               type: "code",
               title: "Generated Code",
               content: code,
+              pipelineRunId: data.pipelineRunId ?? null,
+              pipelineStepRunId: data.pipelineStepRunId ?? null,
+              artifactType: "code_block",
             }
           });
         }
@@ -386,6 +384,9 @@ async function processJob(job: any): Promise<void> {
           type: "analysis",
           title: "Execution Analysis",
           content: output.slice(0, 500) + (output.length > 500 ? "..." : ""),
+          pipelineRunId: data.pipelineRunId ?? null,
+          pipelineStepRunId: data.pipelineStepRunId ?? null,
+          artifactType: "execution_summary",
         }
       });
 
