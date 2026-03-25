@@ -2,6 +2,9 @@ node_modules/
 dist/
 .env
 .env.local
-.forge/config.json
+# Forge runtime data and secrets
+.forge/
+# opencode local tool config (machine-specific, contains generated agent stubs)
+.opencode/
 *.pid
 .DS_Store

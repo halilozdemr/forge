@@ -1,0 +1,228 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forge.local/ai-system/contracts/output-contract.schema.json",
+  "title": "Forge Official Agent Output Contract v1.0.0",
+  "description": "Unified stage output contract for official and pipeline-compatible extension agents.",
+  "oneOf": [
+    { "$ref": "#/$defs/artifact" },
+    { "$ref": "#/$defs/decision_request" },
+    { "$ref": "#/$defs/escalation_request" },
+    { "$ref": "#/$defs/explicit_failure" }
+  ],
+  "$defs": {
+    "base": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contract_version",
+        "result_type",
+        "stage",
+        "agent",
+        "run_id",
+        "intake_id",
+        "project_context_ref"
+      ],
+      "properties": {
+        "contract_version": { "const": "1.0.0" },
+        "result_type": {
+          "type": "string",
+          "enum": [
+            "artifact",
+            "decision_request",
+            "escalation_request",
+            "explicit_failure"
+          ]
+        },
+        "stage": {
+          "type": "string",
+          "enum": [
+            "intake-gate",
+            "architect",
+            "builder",
+            "quality-guard",
+            "devops",
+            "retrospective-analyst"
+          ]
+        },
+        "agent": { "type": "string", "minLength": 1 },
+        "run_id": { "type": "string", "minLength": 1 },
+        "intake_id": { "type": "string", "minLength": 1 },
+        "project_context_ref": { "type": "string", "minLength": 1 },
+        "meta": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      }
+    },
+    "artifact": {
+      "allOf": [
+        { "$ref": "#/$defs/base" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["artifact"],
+          "properties": {
+            "result_type": { "const": "artifact" },
+            "artifact": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["artifact_type", "content", "acceptance_trace"],
+              "properties": {
+                "artifact_type": {
+                  "type": "string",
+                  "enum": [
+                    "execution_brief",
+                    "architecture_plan",
+                    "work_result",
+                    "validation_report",
+                    "devops_report",
+                    "learning_report",
+                    "context_digest",
+                    "contract_lint_report"
+                  ]
+                },
+                "content": { "type": "object", "additionalProperties": true },
+                "acceptance_trace": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": true,
+                    "required": ["criterion", "status"],
+                    "properties": {
+                      "criterion": { "type": "string", "minLength": 1 },
+                      "status": { "type": "string", "enum": ["pass", "fail", "not_applicable"] },
+                      "evidence": { "type": "string" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "decision_request": {
+      "allOf": [
+        { "$ref": "#/$defs/base" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["decision"],
+          "properties": {
+            "result_type": { "const": "decision_request" },
+            "decision": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["decision_id", "blocking_reason_code", "question", "options"],
+              "properties": {
+                "decision_id": { "type": "string", "minLength": 1 },
+                "blocking_reason_code": {
+                  "type": "string",
+                  "enum": [
+                    "missing_critical_input",
+                    "conflicting_constraints",
+                    "acceptance_ambiguity",
+                    "dependency_uncertainty"
+                  ]
+                },
+                "question": { "type": "string", "minLength": 1 },
+                "options": {
+                  "type": "array",
+                  "minItems": 2,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["id", "label"],
+                    "properties": {
+                      "id": { "type": "string", "minLength": 1 },
+                      "label": { "type": "string", "minLength": 1 },
+                      "impact": { "type": "string" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "escalation_request": {
+      "allOf": [
+        { "$ref": "#/$defs/base" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["escalation"],
+          "properties": {
+            "result_type": { "const": "escalation_request" },
+            "escalation": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["escalation_id", "authority_scope", "reason_code", "message"],
+              "properties": {
+                "escalation_id": { "type": "string", "minLength": 1 },
+                "authority_scope": { "type": "string", "minLength": 1 },
+                "reason_code": {
+                  "type": "string",
+                  "enum": [
+                    "policy_boundary",
+                    "security_boundary",
+                    "compliance_boundary",
+                    "ownership_boundary"
+                  ]
+                },
+                "message": { "type": "string", "minLength": 1 }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "explicit_failure": {
+      "allOf": [
+        { "$ref": "#/$defs/base" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["failure"],
+          "properties": {
+            "result_type": { "const": "explicit_failure" },
+            "failure": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["failure_code", "message", "retryable", "evidence"],
+              "properties": {
+                "failure_code": {
+                  "type": "string",
+                  "enum": [
+                    "intake_required",
+                    "policy_block",
+                    "invalid_input_contract",
+                    "missing_context",
+                    "tool_unavailable",
+                    "validation_failed",
+                    "unsupported_request",
+                    "timeout_limit"
+                  ]
+                },
+                "message": { "type": "string", "minLength": 1 },
+                "retryable": { "type": "boolean" },
+                "evidence": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": true
+                  }
+                },
+                "recommended_action": {
+                  "type": "string",
+                  "enum": ["stop", "retry_stage", "request_decision", "request_escalation"]
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}
