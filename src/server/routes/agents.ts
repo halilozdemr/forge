@@ -4,6 +4,7 @@ import { transitionAgent } from "../../agents/lifecycle.js";
 import { buildHierarchy, formatHierarchy, getEscalationChain } from "../../agents/hierarchy.js";
 import { isSupportedModelProvider, isValidModel } from "../../agents/validation.js";
 import { syncProjectClientProjectionsFromRegistry } from "../../opencode/project-config.js";
+import { buildDefaultClientConfigForSlug, isOfficialAgentSlug } from "../../agents/constants.js";
 
 const EDITABLE_STATUSES = new Set(["idle", "active", "paused", "terminated"]);
 
@@ -40,12 +41,22 @@ export async function agentRoutes(server: FastifyInstance) {
   const db = getDb();
 
   // GET /v1/agents?companyId=xxx
-  server.get<{ Querystring: { companyId: string } }>("/agents", async (request) => {
-    const { companyId } = request.query;
-    const agents = await db.agent.findMany({
+  server.get<{ Querystring: { companyId: string; namespace?: "official" | "user" } }>("/agents", async (request) => {
+    const { companyId, namespace } = request.query;
+    const allAgents = await db.agent.findMany({
       where: companyId ? { companyId } : undefined,
       orderBy: { slug: "asc" },
     });
+    const agents = namespace
+      ? allAgents.filter((agent) => {
+          try {
+            const cfg = JSON.parse(agent.clientConfig || "{}") as { namespace?: string };
+            return (cfg.namespace ?? (isOfficialAgentSlug(agent.slug) ? "official" : "user")) === namespace;
+          } catch {
+            return (isOfficialAgentSlug(agent.slug) ? "official" : "user") === namespace;
+          }
+        })
+      : allAgents;
     return { agents };
   });
 
@@ -81,9 +92,21 @@ export async function agentRoutes(server: FastifyInstance) {
       reportsTo?: string;
       permissions?: Record<string, boolean>;
       heartbeatCron?: string;
+      namespace?: "official" | "user";
     };
   }>("/agents", async (request, reply) => {
-    const { companyId, slug, name, role, modelProvider, model, reportsTo, permissions, heartbeatCron } = request.body;
+    const {
+      companyId,
+      slug,
+      name,
+      role,
+      modelProvider,
+      model,
+      reportsTo,
+      permissions,
+      heartbeatCron,
+      namespace,
+    } = request.body;
 
     if (!companyId || !slug || !name || !model) {
       return reply.code(400).send({ error: "companyId, slug, name, and model are required" });
@@ -92,6 +115,14 @@ export async function agentRoutes(server: FastifyInstance) {
     // Check if company requires approval for new agents
     const company = await db.company.findUnique({ where: { id: companyId } });
     if (!company) return reply.code(404).send({ error: "Company not found" });
+
+    const effectiveNamespace = namespace ?? (isOfficialAgentSlug(slug) ? "official" : "user");
+    if (effectiveNamespace === "user" && isOfficialAgentSlug(slug)) {
+      return reply.code(400).send({ error: `Slug "${slug}" is reserved for official agents` });
+    }
+    if (effectiveNamespace === "official" && !isOfficialAgentSlug(slug)) {
+      return reply.code(400).send({ error: `Slug "${slug}" is not an official reserved slug` });
+    }
 
     if (company.requireApprovalForNewAgents) {
       const approval = await db.approval.create({
@@ -109,6 +140,7 @@ export async function agentRoutes(server: FastifyInstance) {
             reportsTo: reportsTo || null,
             permissions: permissions || {},
             heartbeatCron: heartbeatCron || null,
+            namespace: effectiveNamespace,
           }),
         },
       });
@@ -129,12 +161,7 @@ export async function agentRoutes(server: FastifyInstance) {
         model,
         reportsTo: reportsTo || null,
         permissions: JSON.stringify(permissions || {}),
-        clientConfig: JSON.stringify({
-          visibleIn: ["claude-code", "opencode"],
-          opencodeMode: slug === "receptionist" ? "primary" : "subagent",
-          displayOrder: 99,
-          entrypoint: slug === "receptionist",
-        }),
+        clientConfig: JSON.stringify(buildDefaultClientConfigForSlug(slug, effectiveNamespace)),
         heartbeatCron: heartbeatCron || null,
         status: "idle",
       },

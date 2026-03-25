@@ -1,8 +1,8 @@
 import type { PipelineStep } from "../index.js";
 
 /**
- * Bug pipeline:
- * Approved brief → Debugger → Reviewer → DevOps(hotfix commit)
+ * Official bug pipeline:
+ * intake-gate -> architect -> builder -> quality-guard -> devops
  */
 export function buildBugfixPipeline(opts: {
   issueId: string;
@@ -13,24 +13,34 @@ export function buildBugfixPipeline(opts: {
 
   return [
     {
-      key: "debugger",
-      agentSlug: "debugger",
-      input: `Bug report already approved by the client.\n\n${context}\n\nPerform root cause analysis. Read the codebase, identify the source, document findings in .forge/memory/problems.md, and implement the minimum safe fix.`,
+      key: "intake-gate",
+      agentSlug: "intake-gate",
+      input: `Normalize bug request into execution_brief.\n\n${context}\n\nReturn contract JSON only.`,
       dependsOn: [],
     },
     {
-      key: "reviewer",
-      agentSlug: "reviewer",
-      input: `Bug fix implemented.\n\n${context}\n\nReview the fix for correctness and regressions. Confirm the bug is resolved.`,
-      dependsOn: ["debugger"],
-      loopsBackTo: "debugger",
-      maxRevisions: 3,
+      key: "architect",
+      agentSlug: "architect",
+      input: `Build architecture_plan for bug fix from execution_brief.\n\n${context}\n\nReturn contract JSON only.`,
+      dependsOn: ["intake-gate"],
+    },
+    {
+      key: "builder",
+      agentSlug: "builder",
+      input: `Build work_result for bug fix from execution_brief + architecture_plan.\n\n${context}\n\nReturn contract JSON only.`,
+      dependsOn: ["architect"],
+    },
+    {
+      key: "quality-guard",
+      agentSlug: "quality-guard",
+      input: `Validate bug-fix work_result against execution_brief + architecture_plan.\n\n${context}\n\nReturn contract JSON only.`,
+      dependsOn: ["builder"],
     },
     {
       key: "devops",
       agentSlug: "devops",
-      input: `Bug fix reviewed and approved.\n\n${context}\n\nCommit with a "fix:" conventional commit message. Merge the hotfix branch if applicable.`,
-      dependsOn: ["reviewer"],
+      input: `Produce optional devops_report for hotfix readiness.\n\n${context}\n\nReturn contract JSON only.`,
+      dependsOn: ["quality-guard"],
     },
   ];
 }

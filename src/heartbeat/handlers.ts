@@ -29,14 +29,11 @@ export async function runHeartbeatForAgent(ctx: HeartbeatContext): Promise<strin
     let result: string;
 
     switch (agentSlug) {
-      case "scrum_master":
-        result = await handleScrumMasterHeartbeat(companyId);
+      case "retrospective-analyst":
+        result = await handleRetrospectiveHeartbeat(companyId);
         break;
-      case "receptionist":
-        result = await handleReceptionistHeartbeat(companyId);
-        break;
-      case "pm":
-        result = await handlePmHeartbeat(companyId);
+      case "intake-gate":
+        result = await handleIntakeGateHeartbeat(companyId);
         break;
       default:
         result = await handleGenericAgentHeartbeat(ctx);
@@ -61,9 +58,9 @@ export async function runHeartbeatForAgent(ctx: HeartbeatContext): Promise<strin
 }
 
 /**
- * Scrum Master: check for completed sprints needing retrospective, stale in_progress issues.
+ * Retrospective Analyst: check for completed sprints needing retrospective, stale in_progress issues.
  */
-async function handleScrumMasterHeartbeat(companyId: string): Promise<string> {
+async function handleRetrospectiveHeartbeat(companyId: string): Promise<string> {
   const db = getDb();
   const actions: string[] = [];
 
@@ -87,12 +84,12 @@ async function handleScrumMasterHeartbeat(companyId: string): Promise<string> {
     });
 
     if (!retroExists) {
-      // Queue a retrospective task for scrum-master
-      const agent = await db.agent.findFirst({ where: { companyId, slug: "scrum_master" } });
+      // Queue a retrospective task for retrospective-analyst
+      const agent = await db.agent.findFirst({ where: { companyId, slug: "retrospective-analyst" } });
       if (agent) {
         await enqueueAgentJob({
           companyId,
-          agentSlug: "scrum_master",
+          agentSlug: "retrospective-analyst",
           agentId: agent.id,
           input: `Sprint #${sprint.number} (${sprint.goal}) is complete. Write a retrospective summary and save key learnings.`,
           issueId: undefined,
@@ -114,17 +111,17 @@ async function handleScrumMasterHeartbeat(companyId: string): Promise<string> {
 
   if (staleIssues.length > 0) {
     actions.push(`found ${staleIssues.length} stale in_progress issues`);
-    log.warn({ companyId, count: staleIssues.length }, "Stale issues detected by scrum-master heartbeat");
-    emit({ type: "heartbeat.log", agentSlug: "scrum_master", line: `Found ${staleIssues.length} stale issues.` });
+    log.warn({ companyId, count: staleIssues.length }, "Stale issues detected by retrospective-analyst heartbeat");
+    emit({ type: "heartbeat.log", agentSlug: "retrospective-analyst", line: `Found ${staleIssues.length} stale issues.` });
   }
 
   return actions.length > 0 ? actions.join("; ") : "no action needed";
 }
 
 /**
- * Receptionist: check for unassigned open issues, flag blockers.
+ * Intake Gate: check for unassigned open issues, flag blockers.
  */
-async function handleReceptionistHeartbeat(companyId: string): Promise<string> {
+async function handleIntakeGateHeartbeat(companyId: string): Promise<string> {
   const db = getDb();
   const actions: string[] = [];
 
@@ -138,8 +135,8 @@ async function handleReceptionistHeartbeat(companyId: string): Promise<string> {
 
   if (unassignedOpen > 0) {
     actions.push(`${unassignedOpen} unassigned open issues`);
-    log.warn({ companyId, unassignedOpen }, "Receptionist heartbeat: unassigned open issues");
-    emit({ type: "heartbeat.log", agentSlug: "receptionist", line: `Found ${unassignedOpen} unassigned open issues.` });
+    log.warn({ companyId, unassignedOpen }, "Intake-gate heartbeat: unassigned open issues");
+    emit({ type: "heartbeat.log", agentSlug: "intake-gate", line: `Found ${unassignedOpen} unassigned open issues.` });
   }
 
   const escalatedIssues = await db.issue.count({
@@ -151,29 +148,6 @@ async function handleReceptionistHeartbeat(companyId: string): Promise<string> {
   }
 
   return actions.length > 0 ? actions.join("; ") : "no action needed";
-}
-
-/**
- * PM: check for open issues that haven't been added to any sprint.
- */
-async function handlePmHeartbeat(companyId: string): Promise<string> {
-  const db = getDb();
-
-  const backlogCount = await db.issue.count({
-    where: {
-      project: { companyId },
-      status: "open",
-      sprintId: null,
-    },
-  });
-
-  if (backlogCount > 0) {
-    log.info({ companyId, backlogCount }, "PM heartbeat: backlog items pending sprint assignment");
-    emit({ type: "heartbeat.log", agentSlug: "pm", line: `Found ${backlogCount} backlog items pending sprint assignment.` });
-    return `${backlogCount} backlog items not in any sprint`;
-  }
-
-  return "backlog clear";
 }
 
 /**

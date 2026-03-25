@@ -4,104 +4,92 @@ import os from "os";
 import matter from "gray-matter";
 import { PrismaClient } from "@prisma/client";
 import { fileURLToPath } from "url";
+import { buildDefaultClientConfigForSlug, OFFICIAL_AGENT_SLUGS } from "../src/agents/constants.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const prisma = new PrismaClient();
 
+const HEAVY_OFFICIAL = new Set(["architect", "quality-guard"]);
+
 async function main() {
   const configPath = path.join(os.homedir(), ".forge", "config.json");
   if (!fs.existsSync(configPath)) {
     console.error(`Error: config file not found at ${configPath}`);
-    console.error("Please run 'forge init' first to dynamically configure agent models/providers.");
+    console.error("Please run 'forge init' first.");
     process.exit(1);
   }
 
   const config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
-  
+
   const company = await prisma.company.findFirst();
   if (!company) {
     console.error("Error: No company found in DB. Please run 'forge init' first or seed the database.");
     process.exit(1);
   }
 
-  const opencodeAgentsDir = path.join(os.homedir(), ".config", "opencode", "agents");
-  if (!fs.existsSync(opencodeAgentsDir)) {
-    console.error(`Error: OpenCode agents directory not found at ${opencodeAgentsDir}`);
+  const officialAgentsDir = path.join(__dirname, "..", "ai-system", "official", "agents");
+  if (!fs.existsSync(officialAgentsDir)) {
+    console.error(`Error: official agents directory not found at ${officialAgentsDir}`);
     process.exit(1);
   }
 
-  const files = fs.readdirSync(opencodeAgentsDir).filter((f) => f.endsWith(".md") && f !== "receptionist.md");
-  
-  console.log(`Found ${files.length} OpenCode agents. Migrating to Forge DB...`);
+  console.log(`Seeding ${OFFICIAL_AGENT_SLUGS.length} official agents from ${officialAgentsDir}`);
 
-  const defaultsDir = path.join(__dirname, "..", "src", "agents", "defaults");
-  if (!fs.existsSync(defaultsDir)) fs.mkdirSync(defaultsDir, { recursive: true });
-
-  for (const file of files) {
-    const slug = file.replace(".md", "");
-    const content = fs.readFileSync(path.join(opencodeAgentsDir, file), "utf-8");
-    const parsed = matter(content);
-
-    // Save prompt to defaults dir, stripping frontmatter
-    const promptFile = path.join(defaultsDir, `${slug}.md`);
-    fs.writeFileSync(promptFile, parsed.content.trim());
-
-    const { data } = parsed;
-
-    // Dynamically resolve provider and model from config
-    let modelProvider = "openrouter";
-    let model = "deepseek/deepseek-v3.2";
-    
-    if (config.agents && config.agents[slug]) {
-        modelProvider = config.agents[slug].modelProvider || config.defaultProvider || modelProvider;
-        model = config.agents[slug].model || config.defaultModel || model;
-    } else {
-        modelProvider = config.defaultProvider || modelProvider;
-        model = config.defaultModel || model;
+  for (const slug of OFFICIAL_AGENT_SLUGS) {
+    const promptFile = path.join(officialAgentsDir, `${slug}.md`);
+    if (!fs.existsSync(promptFile)) {
+      console.warn(`Skipping ${slug}: prompt file not found at ${promptFile}`);
+      continue;
     }
 
+    const content = fs.readFileSync(promptFile, "utf-8");
+    const parsed = matter(content);
+    const { data } = parsed;
+
+    const fallbackProvider = HEAVY_OFFICIAL.has(slug)
+      ? config?.agentStrategy?.heavy?.provider ?? config?.defaultProvider ?? "claude-cli"
+      : config?.agentStrategy?.light?.provider ?? config?.defaultProvider ?? "openrouter";
+    const fallbackModel = HEAVY_OFFICIAL.has(slug)
+      ? config?.agentStrategy?.heavy?.model ?? config?.defaultModel ?? "sonnet"
+      : config?.agentStrategy?.light?.model ?? config?.defaultModel ?? "deepseek/deepseek-v3-0324:free";
+
+    const modelProvider = config?.agents?.[slug]?.modelProvider || fallbackProvider;
+    const model = config?.agents?.[slug]?.model || fallbackModel;
+
     const permissions = data.permissions || data.permission || {};
-    const permissionsStr = typeof permissions === 'object' ? JSON.stringify(permissions) : "{}";
+    const permissionsStr = typeof permissions === "object" ? JSON.stringify(permissions) : "{}";
 
     await prisma.agent.upsert({
       where: { companyId_slug: { companyId: company.id, slug } },
       update: {
-        name: data.name || slug,
-        role: data.role || data.name || slug,
+        name: String(data.name || slug),
+        role: String(data.description || data.role || slug),
+        modelProvider,
+        model,
         promptFile,
         permissions: permissionsStr,
+        clientConfig: JSON.stringify(buildDefaultClientConfigForSlug(slug, "official")),
       },
       create: {
         companyId: company.id,
         slug,
-        name: data.name || slug,
-        role: data.role || data.name || slug,
+        name: String(data.name || slug),
+        role: String(data.description || data.role || slug),
         modelProvider,
         model,
         reportsTo: null,
         status: "idle",
         permissions: permissionsStr,
         promptFile,
+        clientConfig: JSON.stringify(buildDefaultClientConfigForSlug(slug, "official")),
       },
     });
 
-    console.log(`Migrated ${slug} -> provider: ${modelProvider}, model: ${model}`);
+    console.log(`Seeded ${slug} -> provider: ${modelProvider}, model: ${model}`);
   }
 
-  // İkinci geçiş: reportsTo id ile guncelleme
-  const pm = await prisma.agent.findFirst({ where: { companyId: company.id, slug: "pm" } });
-  const architect = await prisma.agent.findFirst({ where: { companyId: company.id, slug: "architect" } });
-  const builder = await prisma.agent.findFirst({ where: { companyId: company.id, slug: "builder" } });
-  const designer = await prisma.agent.findFirst({ where: { companyId: company.id, slug: "designer" } });
-  const reviewer = await prisma.agent.findFirst({ where: { companyId: company.id, slug: "reviewer" } });
-
-  if (architect && pm) await prisma.agent.update({ where: { id: architect.id }, data: { reportsTo: pm.id } });
-  if (builder && architect) await prisma.agent.update({ where: { id: builder.id }, data: { reportsTo: architect.id } });
-  if (designer && architect) await prisma.agent.update({ where: { id: designer.id }, data: { reportsTo: architect.id } });
-  if (reviewer && builder) await prisma.agent.update({ where: { id: reviewer.id }, data: { reportsTo: builder.id } });
-
-  console.log("Migration complete.");
+  console.log("Official agent seeding complete.");
   await prisma.$disconnect();
 }
 

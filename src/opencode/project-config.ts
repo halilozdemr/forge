@@ -6,65 +6,44 @@ import matter from "gray-matter";
 import type { PrismaClient } from "@prisma/client";
 import type { CustomAgentDef, ProviderStrategy } from "../db/seed.js";
 import { createChildLogger } from "../utils/logger.js";
+import {
+  buildDefaultClientConfigForSlug,
+  OFFICIAL_AGENT_PROMPT_DIR,
+  OFFICIAL_AGENT_SLUGS,
+  OFFICIAL_ENTRY_AGENT_SLUG,
+  isOfficialAgentSlug,
+} from "../agents/constants.js";
 
 const log = createChildLogger("opencode-project-config");
 
-const DEFAULT_AGENT_ORDER = [
-  "receptionist",
-  "pm",
-  "architect",
-  "builder",
-  "reviewer",
-  "debugger",
-  "devops",
-  "designer",
-  "scrum_master",
-] as const;
+const DEFAULT_AGENT_ORDER = [...OFFICIAL_AGENT_SLUGS] as const;
 
-const HEAVY_AGENT_SLUGS = new Set(["architect", "reviewer", "debugger"]);
-
-const REPO_TEMPLATE_FALLBACKS: Record<string, string> = {
-  receptionist: "ceo.md",
-  builder: "engineer.md",
-  scrum_master: "scrum-master.md",
-};
+const HEAVY_AGENT_SLUGS = new Set(["architect", "quality-guard"]);
 
 const DEFAULT_AGENT_METADATA: Record<string, { name: string; description: string }> = {
-  receptionist: {
-    name: "Receptionist",
-    description: "Client liaison, request intake, flow routing.",
-  },
-  pm: {
-    name: "Product Manager",
-    description: "Sprint planning, task decomposition, backlog management.",
+  "intake-gate": {
+    name: "Intake Gate",
+    description: "Stage-1 intake normalization and execution_brief generation.",
   },
   architect: {
-    name: "Lead Architect",
-    description: "Technical decisions, architecture design, escalation handler.",
+    name: "Architect",
+    description: "Stage-2 architecture_plan generation.",
   },
   builder: {
-    name: "builder",
-    description: "Code implementation.",
+    name: "Builder",
+    description: "Stage-3 implementation into work_result.",
   },
-  reviewer: {
-    name: "reviewer",
-    description: "Code review, quality gate.",
-  },
-  debugger: {
-    name: "debugger",
-    description: "Bug investigation and hotfix.",
+  "quality-guard": {
+    name: "Quality Guard",
+    description: "Stage-4 validation and quality gate.",
   },
   devops: {
-    name: "devops",
-    description: "Git workflow, deployment, release automation.",
+    name: "DevOps",
+    description: "Optional operational readiness and release artifacts.",
   },
-  designer: {
-    name: "designer",
-    description: "UI specifications and UX flows.",
-  },
-  scrum_master: {
-    name: "scrum_master",
-    description: "Retrospectives and process improvement.",
+  "retrospective-analyst": {
+    name: "Retrospective Analyst",
+    description: "Optional learning_report generation.",
   },
 };
 
@@ -156,18 +135,16 @@ async function loadTemplateContent(slug: string): Promise<string | null> {
     return readFile(globalTemplatePath, "utf-8");
   }
 
-  const fallbackFile = REPO_TEMPLATE_FALLBACKS[slug] ?? `${slug}.md`;
-  const repoTemplatePath = join(import.meta.dirname, "..", "agents", "defaults", fallbackFile);
+  const repoTemplatePath = join(OFFICIAL_AGENT_PROMPT_DIR, `${slug}.md`);
   if (!existsSync(repoTemplatePath)) {
     return null;
   }
 
-  const content = await readFile(repoTemplatePath, "utf-8");
-  return content.replaceAll(".forge/", ".opencode/");
+  return readFile(repoTemplatePath, "utf-8");
 }
 
 function buildFallbackTemplate(agent: OpenCodeAgentDefinition): string {
-  const mode = agent.slug === "receptionist" ? "primary" : "subagent";
+  const mode = agent.slug === OFFICIAL_ENTRY_AGENT_SLUG ? "primary" : "subagent";
   const permission = normalizePermissions(agent.permissions);
   const frontmatter = {
     id: agent.slug,
@@ -211,7 +188,7 @@ function applyTemplateOverrides(
     mode:
       typeof templateData.mode === "string"
         ? templateData.mode
-        : agent.slug === "receptionist"
+        : agent.slug === OFFICIAL_ENTRY_AGENT_SLUG
           ? "primary"
           : "subagent",
     temperature:
@@ -349,8 +326,8 @@ export async function syncProjectOpenCodeConfig(config: ForgeInitConfigLike): Pr
 
   nextConfig.mcp = mcp;
 
-  if (agents.some((agent) => agent.slug === "receptionist")) {
-    nextConfig.default_agent = "receptionist";
+  if (agents.some((agent) => agent.slug === OFFICIAL_ENTRY_AGENT_SLUG)) {
+    nextConfig.default_agent = OFFICIAL_ENTRY_AGENT_SLUG;
   }
 
   await writeFile(opencodeConfigPath, JSON.stringify(nextConfig, null, 2) + "\n");
@@ -366,14 +343,15 @@ export async function syncProjectOpenCodeConfig(config: ForgeInitConfigLike): Pr
 }
 
 function defaultClientProjectionConfig(slug: string): ClientProjectionConfig {
-  const displayOrder = DEFAULT_AGENT_ORDER.findIndex((item) => item === slug);
-  const isKnownDefaultAgent = displayOrder >= 0;
+  const fallbackNamespace = isOfficialAgentSlug(slug) ? "official" : "user";
+  const base = buildDefaultClientConfigForSlug(slug, fallbackNamespace);
+  const isKnownDefaultAgent = DEFAULT_AGENT_ORDER.includes(slug as (typeof DEFAULT_AGENT_ORDER)[number]);
 
   return {
-    visibleIn: isKnownDefaultAgent ? ["claude-code", "opencode"] : [],
-    opencodeMode: slug === "receptionist" ? "primary" : "subagent",
-    displayOrder: displayOrder >= 0 ? displayOrder : 99,
-    entrypoint: slug === "receptionist",
+    visibleIn: isKnownDefaultAgent ? ["claude-code", "opencode"] : base.visibleIn,
+    opencodeMode: base.opencodeMode,
+    displayOrder: base.displayOrder,
+    entrypoint: base.entrypoint,
   };
 }
 
@@ -401,7 +379,7 @@ function buildClientProjectionFrontmatter(agent: OpenCodeAgentDefinition, config
     description: agent.description,
     model: toOpenCodeModel(agent.modelProvider, agent.model),
     mode: config.opencodeMode,
-    temperature: agent.slug === "receptionist" ? 0.2 : 0.1,
+    temperature: agent.slug === OFFICIAL_ENTRY_AGENT_SLUG ? 0.2 : 0.1,
     permission: {
       read: "allow",
       grep: "allow",
@@ -414,50 +392,42 @@ function buildClientProjectionFrontmatter(agent: OpenCodeAgentDefinition, config
   };
 }
 
-function renderReceptionistProjection(agent: OpenCodeAgentDefinition): string {
+function renderIntakeProjection(agent: OpenCodeAgentDefinition): string {
   const body = [
-    "You are the Receptionist projection for Forge.",
-    "You are an intake layer only. Never implement locally and never orchestrate with local task chaining.",
+    "You are the Intake Gate projection for Forge.",
+    "You are an intake-only projection. Never implement locally and never orchestrate locally.",
     "",
     "Rules:",
-    "- Gather the request, ask at most 2 clarifying questions when essential.",
-    "- For feature, bug, refactor, or release requests, write a brief and get explicit approval.",
-    "- After approval, call `forge_submit_request` with source `opencode`.",
-    "- For direct specialist requests, call `forge_run_agent_direct` with the requested specialist slug.",
-    "- After backend submission, do not stop at issueId. Immediately call `forge_get_pipeline` and report the active backend agent and step.",
+    "- Gather request context and use intake-first handling.",
+    "- For feature, bug, refactor, or release requests, call `forge_submit_request`.",
+    "- After backend submission, immediately call `forge_get_pipeline` and report the active stage.",
     "- If the pipeline is still running, call `forge_wait_pipeline` once before replying so the user sees the freshest active step.",
     "- If the user asks to keep watching progress, continue looping with `forge_wait_pipeline` and report each step transition.",
-    "- Never call the local `task` tool for orchestration.",
+    "- Never call local orchestration patterns or local task chaining.",
     "",
     "When calling `forge_submit_request`, include:",
     "- `source`: `opencode`",
     "- `type`: one of `feature`, `bug`, `refactor`, `release`",
     "- `title`: short user-facing title",
     "- `description`: concise execution request",
-    "- `briefMarkdown`: approved brief",
+    "- `briefMarkdown`: optional user-confirmed brief",
     "- `requestedBy`: `user`",
-    "",
-    "For direct specialist mode:",
-    "- `forge_run_agent_direct`",
-    "- choose the specialist requested by the user",
-    "- immediately call `forge_get_pipeline` after creation and report which specialist is active",
   ].join("\n");
 
   return matter.stringify(`${body}\n`, buildClientProjectionFrontmatter(agent, defaultClientProjectionConfig(agent.slug)));
 }
 
-function renderSpecialistProjection(agent: OpenCodeAgentDefinition, config: ClientProjectionConfig): string {
+function renderCapabilityProjection(agent: OpenCodeAgentDefinition, config: ClientProjectionConfig): string {
   const body = [
-    `You are the ${agent.name} client projection for Forge.`,
-    "You do not implement locally.",
+    `You are the ${agent.name} capability projection for Forge.`,
+    "You do not execute official runs directly.",
     "",
     "Rules:",
-    `- Translate the user's request into a backend run by calling \`forge_run_agent_direct\` with requestedAgentSlug \`${agent.slug}\`.`,
-    "- Use source `opencode` and requestedBy `user`.",
-    "- Never use local task chaining or local code execution for orchestration.",
-    "- After the backend run is created, immediately call `forge_get_pipeline` and tell the user which agent/step is active.",
-    "- If the run is still active, call `forge_wait_pipeline` once before replying so the user gets a fresher status update.",
-    "- If the request is not appropriate for this specialist, tell the user and suggest switching to Receptionist.",
+    "- Enforce intake-first. Use `forge_submit_request` instead of direct specialist run.",
+    "- Treat this projection as capability preference metadata only.",
+    "- Never bypass intake with `forge_run_agent_direct`.",
+    "- Never orchestrate locally.",
+    "- If request is out of scope, ask user to submit through intake with corrected type/scope.",
   ].join("\n");
 
   return matter.stringify(`${body}\n`, buildClientProjectionFrontmatter(agent, config));
@@ -488,8 +458,8 @@ function renderClaudeProjection(
     "",
     "## Runtime Rules",
     "",
-    "- Use `forge_submit_request` for approved feature, bug, refactor, and release requests.",
-    "- Use `forge_run_agent_direct` for direct specialist requests.",
+    "- Use `forge_submit_request` for all official request types (intake-first).",
+    "- Direct specialist runs are non-authoritative and disabled by default for official flow.",
     "- Use `forge_get_pipeline`, `forge_wait_pipeline`, and `forge_list_pipeline_steps` for status checks and progress follow-up.",
     "- Keep orchestration in the Forge backend; do not simulate handoffs locally.",
   ].join("\n");
@@ -540,9 +510,9 @@ export async function syncProjectClientProjectionsFromRegistry(opts: {
   }
 
   for (const agent of opencodeAgents) {
-    const content = agent.slug === "receptionist"
-      ? renderReceptionistProjection(agent)
-      : renderSpecialistProjection(agent, agent.clientConfig);
+    const content = agent.slug === OFFICIAL_ENTRY_AGENT_SLUG
+      ? renderIntakeProjection(agent)
+      : renderCapabilityProjection(agent, agent.clientConfig);
     await writeFile(join(agentDir, `${agent.slug}.md`), content);
   }
 
@@ -578,8 +548,8 @@ export async function syncProjectClientProjectionsFromRegistry(opts: {
     ...existingConfig,
     $schema: "https://opencode.ai/config.json",
     provider,
-    default_agent: opencodeAgents.some((agent) => agent.slug === "receptionist")
-      ? "receptionist"
+    default_agent: opencodeAgents.some((agent) => agent.slug === OFFICIAL_ENTRY_AGENT_SLUG)
+      ? OFFICIAL_ENTRY_AGENT_SLUG
       : existingConfig.default_agent,
   };
 
