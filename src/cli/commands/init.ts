@@ -573,15 +573,15 @@ async function runInit(opts: { yes?: boolean }): Promise<void> {
 
   if (advanced && availableProviders.length > 1) {
     p.log.step("Agent model assignment (auto-selected):");
-    p.log.message(`  Smart agents  (Architect, Reviewer, Debugger): ${providerStrategy.heavy.provider} / ${providerStrategy.heavy.model}`);
-    p.log.message(`  Routine agents (PM, Builder, DevOps, Designer): ${providerStrategy.light.provider} / ${providerStrategy.light.model}`);
+    p.log.message(`  Core workflow agents  (architect, quality-guard): ${providerStrategy.heavy.provider} / ${providerStrategy.heavy.model}`);
+    p.log.message(`  Optional support agents (devops, retrospective-analyst): ${providerStrategy.light.provider} / ${providerStrategy.light.model}`);
 
     const customize = await confirm({ message: "Customize model assignment?", initialValue: false });
     if (customize) {
       const heavyOpts = buildModelOptions(availableProviders, "heavy", fetchedModels);
       const lightOpts = buildModelOptions(availableProviders, "light", fetchedModels);
-      const heavyChoice = await select({ message: "Smart agents (Architect, Reviewer, Debugger):", options: heavyOpts });
-      const lightChoice = await select({ message: "Routine agents (PM, Builder, DevOps, Designer):", options: lightOpts });
+      const heavyChoice = await select({ message: "Core workflow agents (architect, quality-guard):", options: heavyOpts });
+      const lightChoice = await select({ message: "Optional support agents (devops, retrospective-analyst):", options: lightOpts });
       const [hProv, hModel] = heavyChoice.split("|");
       const [lProv, lModel] = lightChoice.split("|");
       providerStrategy = { heavy: { provider: hProv, model: hModel }, light: { provider: lProv, model: lModel } };
@@ -627,7 +627,7 @@ async function runInit(opts: { yes?: boolean }): Promise<void> {
 
   if (advanced) {
     useDefaultAgents = await confirm({
-      message: "Use default agents? (9 pre-configured agents: Architect, Builder, Reviewer, Debugger, PM, DevOps, Designer, Scrum Master, Receptionist)",
+      message: "Use official agents? (6 workflow agents: intake-gate, architect, builder, quality-guard + optional: devops, retrospective-analyst)",
       initialValue: true,
     });
 
@@ -711,8 +711,8 @@ async function runInit(opts: { yes?: boolean }): Promise<void> {
     p.log.message(`  Project:        ${projectName} (${stack})`);
     p.log.message(`  Providers:      ${availableProviders.join(", ") || "none"}`);
     if (useDefaultAgents) {
-      p.log.message(`  Smart agents:   ${providerStrategy.heavy.provider} / ${providerStrategy.heavy.model}`);
-      p.log.message(`  Routine agents: ${providerStrategy.light.provider} / ${providerStrategy.light.model}`);
+      p.log.message(`  Core workflow agents:   ${providerStrategy.heavy.provider} / ${providerStrategy.heavy.model}`);
+      p.log.message(`  Optional support agents: ${providerStrategy.light.provider} / ${providerStrategy.light.model}`);
     } else {
       p.log.message(`  Agents:         ${customAgents?.length ?? 0} custom agent(s)`);
       for (const a of customAgents ?? []) {
