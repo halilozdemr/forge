@@ -27,7 +27,7 @@ export async function intakeRoutes(server: FastifyInstance) {
   server.post<{
     Body: {
       source: "claude-code" | "opencode" | "api";
-      type: "feature" | "bug" | "refactor" | "release" | "direct";
+      type: "feature" | "bug" | "refactor" | "release" | "harness" | "direct";
       title: string;
       description?: string;
       briefMarkdown?: string;

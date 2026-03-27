@@ -171,6 +171,7 @@ model PipelineRun {
   issue        Issue?           @relation(fields: [issueId], references: [id], onDelete: SetNull)
   stepRuns     PipelineStepRun[]
   workProducts IssueWorkProduct[]
+  sprintRuns   SprintRun[]
 
   @@unique([companyId, clientRequestKey])
   @@index([companyId, status])
@@ -568,7 +569,9 @@ model IssueWorkProduct {
   filePath          String?
   pipelineRunId     String?
   pipelineStepRunId String?
-  artifactType      String?  // code_block | execution_summary
+  artifactType      String?  // code_block | execution_summary | ProductSpec | SprintContract | BuildResult | EvaluationReport
+  structuredPayload String?  // JSON — typed artifact payload validated against ARTIFACT_SCHEMAS[artifactType]
+  schemaVersion     String?  // artifact schema version tag (e.g. "v2.1")
   createdAt         DateTime @default(now())
 
   issue           Issue            @relation(fields: [issueId], references: [id], onDelete: Cascade)
@@ -576,7 +579,32 @@ model IssueWorkProduct {
   pipelineStepRun PipelineStepRun? @relation(fields: [pipelineStepRunId], references: [id], onDelete: SetNull)
 
   @@index([pipelineRunId])
+  @@index([artifactType])
   @@map("issue_work_products")
+}
+
+// V2.1 – Sprint execution ledger: one row per sprint per pipeline run.
+// Tracks the full lifecycle of a sprint: contracting → building → passed / approval_pending / failed.
+// The harness reads this to determine where a pipeline is in its sprint loop.
+model SprintRun {
+  id                   String    @id @default(cuid())
+  pipelineRunId        String
+  sprintNumber         Int
+  status               String    @default("contracting") // contracting | building | passed | failed | approval_pending
+  approvalReason       String?   // human_review_required | not_verifiable_required_machine | build_retry_limit | contract_revision_limit | evaluation_failure
+  contractRevisions    Int       @default(0)
+  buildAttempts        Int       @default(0)
+  contractArtifactId   String?   // IssueWorkProduct.id of the approved SprintContract artifact
+  buildArtifactId      String?   // IssueWorkProduct.id of the BuildResult artifact
+  evaluationArtifactId String?   // IssueWorkProduct.id of the final EvaluationReport artifact
+  createdAt            DateTime  @default(now())
+  completedAt          DateTime?
+
+  pipelineRun PipelineRun @relation(fields: [pipelineRunId], references: [id], onDelete: Cascade)
+
+  @@unique([pipelineRunId, sprintNumber])
+  @@index([pipelineRunId, status])
+  @@map("sprint_runs")
 }
 
 model Label {

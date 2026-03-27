@@ -279,7 +279,7 @@ export async function startMcpServer() {
     {
       title: z.string().describe("Short title of the issue"),
       description: z.string().optional().describe("Detailed description of the task"),
-      type: z.enum(["feature", "bug", "refactor", "release"]).default("feature"),
+      type: z.enum(["feature", "bug", "refactor", "release", "harness"]).default("feature"),
     },
     async (params) => {
       // We need a projectId to create an issue. Try to resolve it from /context
@@ -342,7 +342,7 @@ export async function startMcpServer() {
     "Submit an approved client request to Forge backend orchestration. Preferred entrypoint for conversational flows.",
     {
       source: z.enum(["claude-code", "opencode", "api"]).default("api"),
-      type: z.enum(["feature", "bug", "refactor", "release"]),
+      type: z.enum(["feature", "bug", "refactor", "release", "harness"]),
       title: z.string().describe("Short title for the request"),
       description: z.string().optional().describe("Concise execution request"),
       briefMarkdown: z.string().optional().describe("Approved brief markdown"),

@@ -3,6 +3,9 @@ import { enqueueAgentJob } from "../bridge/queue.js";
 import { emit } from "../events/emitter.js";
 import { createChildLogger } from "../utils/logger.js";
 import type { DispatchResult, PipelineStep } from "./index.js";
+import { getHarnessArtifactType, extractStructuredArtifact, validateAndStoreArtifact, assembleHarnessStepContext } from "./harness-artifacts.js";
+import { buildSprintSteps } from "./pipelines/harness.js";
+import type { ProductSpec, EvaluationReport } from "./artifacts.js";
 
 const log = createChildLogger("pipeline-dispatcher");
 
@@ -219,6 +222,79 @@ export class PipelineDispatcher {
       return;
     }
 
+    // Set to true when a harness sprint outcome requires a human gate.
+    // Prevents enqueueEligibleSteps from auto-advancing to the next sprint.
+    let harnessAdvancePaused = false;
+
+    // Harness artifact extraction, validation, and persistence.
+    // Runs before marking the step completed so a validation failure keeps the step
+    // in a failed state rather than leaving it stuck as "completed".
+    if (stepRun.pipelineRun.requestType === "harness") {
+      const artifactType = getHarnessArtifactType(stepRun.stepKey);
+      if (artifactType !== null) {
+        if (!stepRun.pipelineRun.issueId) {
+          await this.handleStepFailure(stepRunId, `Harness step "${stepRun.stepKey}" requires an issueId on the pipeline run but none is set`, false);
+          return;
+        }
+        const raw = extractStructuredArtifact(resultSummary);
+        if (!raw) {
+          await this.handleStepFailure(stepRunId, `Harness step "${stepRun.stepKey}" did not emit a structured artifact (no JSON block with artifactType field found in output)`, false);
+          return;
+        }
+        if (raw.artifactType !== artifactType) {
+          await this.handleStepFailure(stepRunId, `Harness step "${stepRun.stepKey}" emitted artifactType "${String(raw.artifactType)}" but expected "${artifactType}"`, false);
+          return;
+        }
+        try {
+          await validateAndStoreArtifact(this.db, {
+            artifactType,
+            payload: raw,
+            issueId: stepRun.pipelineRun.issueId,
+            agentSlug: stepRun.agentSlug,
+            pipelineRunId: stepRun.pipelineRunId,
+            pipelineStepRunId: stepRunId,
+            stepKey: stepRun.stepKey,
+          });
+        } catch (err) {
+          await this.handleStepFailure(stepRunId, (err as Error).message, false);
+          return;
+        }
+
+        // After planner validates, dynamically append sprint steps for sprints 2..N.
+        // sprint-1 steps are already in the initial skeleton; only 2..N are new here.
+        if (stepRun.stepKey === "planner") {
+          const spec = raw as unknown as ProductSpec;
+          try {
+            await this.appendSprintSteps(stepRun.pipelineRunId, spec);
+          } catch (err) {
+            await this.handleStepFailure(stepRunId, `Failed to append sprint steps after planner: ${(err as Error).message}`, false);
+            return;
+          }
+        }
+
+        // After sprint-N-evaluate validates, resolve the sprint outcome and update SprintRun.
+        // Sets harnessAdvancePaused=true when the outcome requires a human gate so that
+        // enqueueEligibleSteps is not called and the next sprint is not auto-advanced.
+        const evalMatch = /^sprint-(\d+)-evaluate$/.exec(stepRun.stepKey);
+        if (evalMatch) {
+          const sprintNumber = parseInt(evalMatch[1], 10);
+          const report = raw as unknown as EvaluationReport;
+          try {
+            const shouldAdvance = await this.resolveSprintOutcome(
+              stepRun.pipelineRunId,
+              sprintNumber,
+              report,
+              stepRun.pipelineRun.issueId!,
+            );
+            harnessAdvancePaused = !shouldAdvance;
+          } catch (err) {
+            await this.handleStepFailure(stepRunId, `Sprint outcome resolution failed for sprint ${sprintNumber}: ${(err as Error).message}`, false);
+            return;
+          }
+        }
+      }
+    }
+
     await this.db.pipelineStepRun.update({
       where: { id: stepRunId },
       data: {
@@ -271,6 +347,15 @@ export class PipelineDispatcher {
           return;
         }
       }
+    }
+
+    // Harness sprint outcome required human input — do not auto-advance to next sprint.
+    if (harnessAdvancePaused) {
+      log.info(
+        { pipelineRunId: stepRun.pipelineRunId, stepKey: stepRun.stepKey },
+        "Harness sprint outcome requires human gate — pipeline advancement paused",
+      );
+      return;
     }
 
     const queued = await this.enqueueEligibleSteps(stepRun.pipelineRunId);
@@ -449,19 +534,30 @@ export class PipelineDispatcher {
   ): Promise<string> {
     const projectPath = pipelineRun.issue?.project?.path ?? process.cwd();
 
-    // Inject outputs from all prerequisite steps so each stage receives full context
-    const dependsOn = parseDependsOn(stepRun.dependsOn);
-    const priorOutputSections = dependsOn
-      .map((key) => {
-        const prior = pipelineRun.stepRuns.find((s) => s.stepKey === key);
-        return prior?.resultSummary ? `## Output from ${key}\n${prior.resultSummary}` : null;
-      })
-      .filter((s): s is string => s !== null);
+    // Harness pipelines: assemble context from persisted typed artifacts per §8.
+    // resultSummary is never read or injected for harness steps.
+    // Non-harness pipelines: V1 behaviour — inject prior step resultSummary sections.
+    let enrichedInput: string;
+    if (pipelineRun.requestType === "harness") {
+      enrichedInput = await assembleHarnessStepContext(this.db, {
+        pipelineRunId: pipelineRun.id,
+        stepKey: stepRun.stepKey,
+        inputSnapshot: stepRun.inputSnapshot,
+      });
+    } else {
+      const dependsOn = parseDependsOn(stepRun.dependsOn);
+      const priorOutputSections = dependsOn
+        .map((key) => {
+          const prior = pipelineRun.stepRuns.find((s) => s.stepKey === key);
+          return prior?.resultSummary ? `## Output from ${key}\n${prior.resultSummary}` : null;
+        })
+        .filter((s): s is string => s !== null);
 
-    const enrichedInput =
-      priorOutputSections.length > 0
-        ? `${stepRun.inputSnapshot}\n\n---\n${priorOutputSections.join("\n\n")}`
-        : stepRun.inputSnapshot;
+      enrichedInput =
+        priorOutputSections.length > 0
+          ? `${stepRun.inputSnapshot}\n\n---\n${priorOutputSections.join("\n\n")}`
+          : stepRun.inputSnapshot;
+    }
 
     const agent = await this.db.agent.findUnique({
       where: { companyId_slug: { companyId: pipelineRun.companyId, slug: stepRun.agentSlug } },
@@ -512,5 +608,414 @@ export class PipelineDispatcher {
       });
       emit({ type: "issue.updated", issueId: pipelineRun.issueId, status: "done" });
     }
+  }
+
+  /**
+   * Applies a human approval decision to a harness sprint that is blocked at
+   * `approval_pending`. Supported actions:
+   *
+   *   approve_continue   – accept sprint as-is; advance pipeline to next sprint or complete
+   *   approve_with_notes – accept sprint and inject reviewer notes into next sprint's builder context
+   *   reject_and_retry   – send execution back to sprint-N-build with per-criterion feedback
+   *
+   * `skip_criterion` is deferred to a later step: it requires a `skippedCriteria` Json
+   * field on SprintRun (schema migration) to persist the exclusion across re-evaluation.
+   *
+   * An Approval audit record (type="sprint_review") is written for every decision.
+   * The SprintRun status is updated deterministically and `enqueueEligibleSteps` is
+   * called to resume the pipeline — reusing the existing queue machinery.
+   */
+  async handleHarnessApprovalDecision(
+    pipelineRunId: string,
+    sprintNumber: number,
+    action: "approve_continue" | "approve_with_notes" | "reject_and_retry",
+    opts: {
+      notes?: string;
+      feedback?: Array<{ criterionId: string; reason: string }>;
+      actorId?: string;
+    } = {},
+  ): Promise<void> {
+    const MAX_BUILD_ATTEMPTS = 3;
+
+    const pipelineRun = await this.db.pipelineRun.findUnique({
+      where: { id: pipelineRunId },
+    });
+    if (!pipelineRun) {
+      throw new Error(`Pipeline ${pipelineRunId} not found`);
+    }
+    if (pipelineRun.requestType !== "harness") {
+      throw new Error(`Pipeline ${pipelineRunId} is not a harness pipeline (type: ${pipelineRun.requestType})`);
+    }
+
+    const sprintRun = await this.db.sprintRun.findUnique({
+      where: { pipelineRunId_sprintNumber: { pipelineRunId, sprintNumber } },
+    });
+    if (!sprintRun) {
+      throw new Error(`SprintRun not found for pipeline ${pipelineRunId} sprint ${sprintNumber}`);
+    }
+    if (sprintRun.status !== "approval_pending") {
+      throw new Error(
+        `Sprint ${sprintNumber} is not in approval_pending state (current: ${sprintRun.status})`,
+      );
+    }
+
+    const actor = opts.actorId ?? "user";
+    const buildKey = `sprint-${sprintNumber}-build`;
+    const evaluateKey = `sprint-${sprintNumber}-evaluate`;
+
+    if (action === "approve_continue" || action === "approve_with_notes") {
+      // Transition SprintRun → passed
+      await this.db.sprintRun.update({
+        where: { pipelineRunId_sprintNumber: { pipelineRunId, sprintNumber } },
+        data: {
+          status: "passed",
+          approvalReason: null,
+          completedAt: new Date(),
+        },
+      });
+
+      // approve_with_notes: inject reviewer notes into next sprint's builder inputSnapshot
+      // so that assembleHarnessStepContext passes them through as the baseInput layer.
+      if (action === "approve_with_notes" && opts.notes) {
+        const nextContractKey = `sprint-${sprintNumber + 1}-contract`;
+        const nextContractRun = await this.db.pipelineStepRun.findUnique({
+          where: { pipelineRunId_stepKey: { pipelineRunId, stepKey: nextContractKey } },
+          select: { id: true, inputSnapshot: true },
+        });
+        if (nextContractRun) {
+          const originalInput = nextContractRun.inputSnapshot ?? "";
+          await this.db.pipelineStepRun.update({
+            where: { id: nextContractRun.id },
+            data: {
+              inputSnapshot:
+                `Human reviewer approved sprint ${sprintNumber} with the following feedback: ${opts.notes}\n\n` +
+                originalInput,
+            },
+          });
+          log.info(
+            { pipelineRunId, sprintNumber, nextContractKey },
+            "handleHarnessApprovalDecision: reviewer notes injected into next sprint context",
+          );
+        }
+      }
+
+      // Audit record
+      await this.db.approval.create({
+        data: {
+          companyId: pipelineRun.companyId,
+          type: "sprint_review",
+          status: "approved",
+          requestedBy: actor,
+          reviewedAt: new Date(),
+          metadata: JSON.stringify({
+            pipelineRunId,
+            sprintNumber,
+            action,
+            approvalReason: sprintRun.approvalReason,
+            ...(opts.notes ? { notes: opts.notes } : {}),
+          }),
+        },
+      });
+
+      log.info(
+        { pipelineRunId, sprintNumber, action },
+        "handleHarnessApprovalDecision: sprint approved — advancing pipeline",
+      );
+
+      // Advance: picks up next sprint-contract step or completes pipeline if last sprint
+      await this.enqueueEligibleSteps(pipelineRunId);
+
+    } else if (action === "reject_and_retry") {
+      if (sprintRun.buildAttempts >= MAX_BUILD_ATTEMPTS) {
+        throw new Error(
+          `Sprint ${sprintNumber} has exhausted build attempts (${sprintRun.buildAttempts}/${MAX_BUILD_ATTEMPTS}) — cannot retry`,
+        );
+      }
+
+      // Build feedback context. Criterion descriptions are not fetched here — the
+      // builder will have the full SprintContract via assembleHarnessStepContext.
+      const feedback = opts.feedback ?? [];
+      const feedbackLines =
+        feedback.length > 0
+          ? feedback.map((f) => `  - Criterion ${f.criterionId}: ${f.reason}`).join("\n")
+          : "  (No specific criterion feedback provided — re-evaluate and retry)";
+
+      // Preserve the build step's current inputSnapshot as the base; the feedback
+      // block is prepended so assembleHarnessStepContext will include it as baseInput.
+      const buildStepRun = await this.db.pipelineStepRun.findUnique({
+        where: { pipelineRunId_stepKey: { pipelineRunId, stepKey: buildKey } },
+        select: { inputSnapshot: true },
+      });
+      const originalBuildInput = buildStepRun?.inputSnapshot ?? "";
+
+      const feedbackInput =
+        `HUMAN REVIEW — Sprint ${sprintNumber} rejected, retry requested.\n\n` +
+        `Feedback per criterion:\n${feedbackLines}\n\n` +
+        `Implement the corrections above and emit a new BuildResult artifact.\n\n` +
+        originalBuildInput;
+
+      // Reset only sprint-N-build and sprint-N-evaluate to pending.
+      // Future sprint steps (sprint-(N+1)-contract etc.) are intentionally NOT reset —
+      // they are still pending and depend on sprint-N-evaluate completing successfully.
+      for (const stepKey of [buildKey, evaluateKey]) {
+        await this.db.pipelineStepRun.update({
+          where: { pipelineRunId_stepKey: { pipelineRunId, stepKey } },
+          data: {
+            status: "pending",
+            queueJobId: null,
+            completedAt: null,
+            resultSummary: null,
+            ...(stepKey === buildKey ? { inputSnapshot: feedbackInput } : {}),
+          },
+        });
+      }
+
+      // SprintRun → building (human decided to retry; buildAttempts increments on next evaluate)
+      await this.db.sprintRun.update({
+        where: { pipelineRunId_sprintNumber: { pipelineRunId, sprintNumber } },
+        data: {
+          status: "building",
+          approvalReason: null,
+        },
+      });
+
+      // Audit record
+      await this.db.approval.create({
+        data: {
+          companyId: pipelineRun.companyId,
+          type: "sprint_review",
+          status: "rejected",
+          requestedBy: actor,
+          reviewedAt: new Date(),
+          metadata: JSON.stringify({
+            pipelineRunId,
+            sprintNumber,
+            action,
+            feedback,
+            approvalReason: sprintRun.approvalReason,
+            buildAttemptBeforeRetry: sprintRun.buildAttempts,
+          }),
+        },
+      });
+
+      log.info(
+        { pipelineRunId, sprintNumber, buildAttempts: sprintRun.buildAttempts },
+        "handleHarnessApprovalDecision: sprint rejected — re-queuing build",
+      );
+
+      // Re-queue sprint-N-build (sprint-N-contract-review is still completed → eligible)
+      await this.enqueueEligibleSteps(pipelineRunId);
+    }
+  }
+
+  /**
+   * Appends PipelineStepRun rows for sprints 2..N after the planner emits a
+   * validated ProductSpec. Sprint-1 steps are already in the initial skeleton
+   * and are never touched here.
+   *
+   * Idempotency guard: if "sprint-2-contract" already exists for this pipeline
+   * run, the append is skipped entirely. This covers unexpected re-entry (e.g.
+   * planner step retried after a transient error that still persisted the artifact).
+   *
+   * Called only within the harness artifact block for stepKey === "planner",
+   * so it never fires for non-harness pipelines.
+   */
+  private async appendSprintSteps(pipelineRunId: string, spec: ProductSpec): Promise<void> {
+    const totalSprints = spec.sprints.length;
+    if (totalSprints <= 1) {
+      log.info({ pipelineRunId }, "appendSprintSteps: single-sprint spec — nothing to append");
+      return;
+    }
+
+    // Idempotency guard: treat sprint-2-contract existence as the canonical signal
+    // that this append already ran.
+    const already = await this.db.pipelineStepRun.findUnique({
+      where: { pipelineRunId_stepKey: { pipelineRunId, stepKey: "sprint-2-contract" } },
+    });
+    if (already) {
+      log.warn({ pipelineRunId }, "appendSprintSteps: sprint-2-contract already exists — skipping duplicate append");
+      return;
+    }
+
+    // Build PipelineStep definitions for sprints 2..N.
+    // Each sprint's contract step depends on the previous sprint's evaluate step.
+    const newSteps: PipelineStep[] = [];
+    for (let n = 2; n <= totalSprints; n++) {
+      const firstDependsOn = `sprint-${n - 1}-evaluate`;
+      const steps = buildSprintSteps(n, firstDependsOn, {
+        title: spec.title,
+        description: spec.summary,
+      });
+      newSteps.push(...steps);
+    }
+
+    // Read current planJson before the transaction so we can compute the new value.
+    // planJson is only modified by appendSprintSteps (post-planner) and createPipelineRun,
+    // so reading it here and updating it atomically with the step rows is safe.
+    const run = await this.db.pipelineRun.findUnique({
+      where: { id: pipelineRunId },
+      select: { planJson: true },
+    });
+    const existingPlan = JSON.parse(run?.planJson || "[]") as PipelineStep[];
+    const newPlanJson = JSON.stringify([...existingPlan, ...newSteps]);
+
+    // Atomically persist new step rows and updated planJson together.
+    await this.db.$transaction([
+      this.db.pipelineStepRun.createMany({
+        data: newSteps.map((step) => ({
+          pipelineRunId,
+          stepKey: step.key,
+          agentSlug: step.agentSlug,
+          inputSnapshot: step.input,
+          dependsOn: JSON.stringify(step.dependsOn),
+        })),
+      }),
+      this.db.pipelineRun.update({
+        where: { id: pipelineRunId },
+        data: { planJson: newPlanJson },
+      }),
+    ]);
+
+    log.info(
+      { pipelineRunId, sprintsAppended: totalSprints - 1, totalSprints },
+      "appendSprintSteps: appended sprint steps for harness pipeline",
+    );
+  }
+
+  /**
+   * Applies the §6 sprint outcome rules to a validated EvaluationReport and upserts
+   * the SprintRun row for the given sprint.
+   *
+   * Returns true if the pipeline should advance to the next sprint (outcome = "passed"),
+   * false if it should pause for a human gate (outcome = "approval_pending").
+   *
+   * Auto-retry is permanently OFF for the pilot (HARNESS_AUTO_RETRY=false).
+   * Rule 1 (blockers) therefore always resolves to approval_pending/build_retry_limit
+   * rather than looping back to sprint-N-build automatically.
+   *
+   * Intentionally deferred (documented):
+   * - Harness pre-acceptance checks beyond Zod (gitRefTested = BuildResult.gitRef verification,
+   *   per-criterion toolsUsed completeness) — Zod layer covers schema invariants; deterministic
+   *   cross-field checks are a Step 9+ hardening item.
+   * - SprintRun.contractRevisions tracking — needs a hook in the contract-review REJECTED path,
+   *   not in the evaluate path. Deferred to a follow-up hardening step.
+   */
+  private async resolveSprintOutcome(
+    pipelineRunId: string,
+    sprintNumber: number,
+    report: EvaluationReport,
+    issueId: string,
+  ): Promise<boolean> {
+    // -------------------------------------------------------------------------
+    // Look up artifact IDs for this sprint's three artifact-emitting steps.
+    // Queried by pipelineStepRunId so we get the correct sprint's artifacts even
+    // in multi-sprint pipelines where artifact types repeat across sprints.
+    // -------------------------------------------------------------------------
+    const contractKey  = `sprint-${sprintNumber}-contract`;
+    const buildKey     = `sprint-${sprintNumber}-build`;
+    const evaluateKey  = `sprint-${sprintNumber}-evaluate`;
+
+    const stepRuns = await this.db.pipelineStepRun.findMany({
+      where: { pipelineRunId, stepKey: { in: [contractKey, buildKey, evaluateKey] } },
+      select: { stepKey: true, id: true },
+    });
+    const stepRunIdByKey = new Map(stepRuns.map((s) => [s.stepKey, s.id]));
+
+    const stepRunIds = [contractKey, buildKey, evaluateKey]
+      .map((k) => stepRunIdByKey.get(k))
+      .filter((id): id is string => Boolean(id));
+
+    const workProducts = stepRunIds.length > 0
+      ? await this.db.issueWorkProduct.findMany({
+          where: {
+            pipelineRunId,
+            pipelineStepRunId: { in: stepRunIds },
+            artifactType: { in: ["SprintContract", "BuildResult", "EvaluationReport"] },
+          },
+          select: { id: true, pipelineStepRunId: true },
+        })
+      : [];
+
+    const artifactByStepRunId = new Map(workProducts.map((wp) => [wp.pipelineStepRunId, wp.id]));
+    const contractArtifactId   = artifactByStepRunId.get(stepRunIdByKey.get(contractKey)  ?? "") ?? null;
+    const buildArtifactId      = artifactByStepRunId.get(stepRunIdByKey.get(buildKey)     ?? "") ?? null;
+    const evaluationArtifactId = artifactByStepRunId.get(stepRunIdByKey.get(evaluateKey)  ?? "") ?? null;
+
+    // -------------------------------------------------------------------------
+    // §6 Sprint outcome rules — evaluated in order, first match wins.
+    // -------------------------------------------------------------------------
+    const machine_required_failed  = report.blockers.length > 0;
+    const machine_required_blocked = report.notVerifiableMachineRequired.length > 0;
+    const machine_passed           = report.machinePassed;
+    const requires_human           = report.requiresHumanReview;
+
+    let newStatus: string;
+    let approvalReason: string | null = null;
+
+    if (machine_required_failed) {
+      // Rule 1 — machine criteria failed.
+      // HARNESS_AUTO_RETRY=false: skip the intermediate "failed + loop" path.
+      // Always gate on human input; increment buildAttempts for audit.
+      newStatus = "approval_pending";
+      approvalReason = "build_retry_limit";
+    } else if (machine_required_blocked) {
+      // Rule 2 — required machine criterion is not verifiable by evaluator tools.
+      newStatus = "approval_pending";
+      approvalReason = "not_verifiable_required_machine";
+    } else if (machine_passed && requires_human) {
+      // Rule 3 — machine criteria passed; required human criteria need review.
+      // This is the normal path for sprints with human criteria.
+      newStatus = "approval_pending";
+      approvalReason = "human_review_required";
+    } else if (machine_passed && !requires_human) {
+      // Rule 4 — all machine criteria passed; no human criteria.
+      newStatus = "passed";
+      approvalReason = null;
+    } else {
+      // Unexpected combination (machinePassed=false, no blockers, not blocked).
+      // Should not occur if the Zod schema invariant (machinePassed false when blockers>0)
+      // is enforced, but handled defensively.
+      log.warn(
+        { pipelineRunId, sprintNumber, machinePassed: machine_passed, blockers: report.blockers },
+        "resolveSprintOutcome: unexpected EvaluationReport combination — defaulting to approval_pending",
+      );
+      newStatus = "approval_pending";
+      approvalReason = "build_retry_limit";
+    }
+
+    // -------------------------------------------------------------------------
+    // Upsert SprintRun — create on first evaluation, update on retry.
+    // buildAttempts increments on every evaluate cycle (including first).
+    // -------------------------------------------------------------------------
+    await this.db.sprintRun.upsert({
+      where: { pipelineRunId_sprintNumber: { pipelineRunId, sprintNumber } },
+      create: {
+        pipelineRunId,
+        sprintNumber,
+        status: newStatus,
+        approvalReason,
+        buildAttempts: 1,
+        contractArtifactId,
+        buildArtifactId,
+        evaluationArtifactId,
+        completedAt: newStatus === "passed" ? new Date() : null,
+      },
+      update: {
+        status: newStatus,
+        approvalReason,
+        buildAttempts: { increment: 1 },
+        ...(contractArtifactId   ? { contractArtifactId }   : {}),
+        ...(buildArtifactId      ? { buildArtifactId }      : {}),
+        ...(evaluationArtifactId ? { evaluationArtifactId } : {}),
+        completedAt: newStatus === "passed" ? new Date() : null,
+      },
+    });
+
+    log.info(
+      { pipelineRunId, sprintNumber, newStatus, approvalReason },
+      "resolveSprintOutcome: SprintRun updated",
+    );
+
+    return newStatus === "passed";
   }
 }

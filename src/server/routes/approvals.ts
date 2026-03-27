@@ -13,6 +13,8 @@ export function describeApproval(type: string, metadata: Record<string, unknown>
       return `Budget override for agent "${metadata.agentSlug ?? "?"}"`;
     case "ceo_strategy":
       return `CEO strategy decision required`;
+    case "sprint_review":
+      return `Sprint ${metadata.sprintNumber ?? "?"} review — ${metadata.approvalReason ?? "decision required"}`;
     default:
       return `Approval of type "${type}"`;
   }

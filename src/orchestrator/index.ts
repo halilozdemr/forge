@@ -4,6 +4,7 @@ import { buildFeaturePipeline } from "./pipelines/feature.js";
 import { buildBugfixPipeline } from "./pipelines/bugfix.js";
 import { buildRefactorPipeline } from "./pipelines/refactor.js";
 import { buildReleasePipeline } from "./pipelines/release.js";
+import { buildHarnessPipeline } from "./pipelines/harness.js";
 
 const log = createChildLogger("orchestrator");
 
@@ -66,6 +67,8 @@ export class FirmOrchestrator {
         return buildRefactorPipeline(opts);
       case "release":
         return buildReleasePipeline(opts);
+      case "harness":
+        return buildHarnessPipeline(opts);
       default:
         return buildFeaturePipeline(opts); // default to feature
     }

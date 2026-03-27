@@ -9,6 +9,19 @@ export const OFFICIAL_AGENT_SLUGS = [
   "retrospective-analyst",
 ] as const;
 
+/** Forge V2.1 harness-only agents — not part of classic V1 pipelines or OpenCode init config. */
+export const HARNESS_AGENT_SLUGS = [
+  "planner",
+  "evaluator",
+  "harness-builder",
+] as const;
+
+/** All built-in agent slugs: classic workflow agents + harness agents. Used for prompt loading and seeding. */
+export const ALL_BUILTIN_AGENT_SLUGS = [
+  ...OFFICIAL_AGENT_SLUGS,
+  ...HARNESS_AGENT_SLUGS,
+] as const;
+
 export const OFFICIAL_REQUIRED_PIPELINE = [
   "intake-gate",
   "architect",
@@ -23,7 +36,7 @@ export const OFFICIAL_OPTIONAL_STAGES = [
 
 export const OFFICIAL_ENTRY_AGENT_SLUG = "intake-gate";
 
-export const RESERVED_OFFICIAL_AGENT_SLUGS = new Set<string>(OFFICIAL_AGENT_SLUGS);
+export const RESERVED_OFFICIAL_AGENT_SLUGS = new Set<string>(ALL_BUILTIN_AGENT_SLUGS);
 
 export const OFFICIAL_AGENT_PROMPT_DIR = resolve(
   join(import.meta.dirname, "..", "..", "ai-system", "official", "agents"),
