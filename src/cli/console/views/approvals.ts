@@ -1,7 +1,7 @@
 import type { ConsoleState, LayoutRegions } from "../types.js";
 import {
   BOLD, CYAN, DIM, YELLOW, R,
-  padEnd, clip, shortId, zipPanes, formatRelativeTime, sectionHeader,
+  fit, clip, shortId, zipPanes, formatRelativeTime, sectionHeader,
 } from "../layout.js";
 
 /** Left pane: pending approval list with cursor */
@@ -31,7 +31,7 @@ function buildListLines(state: ConsoleState, listHeight: number, leftWidth: numb
     const cursor = isSelected ? `${CYAN}►${R}` : " ";
     const title = clip(ap.title ?? ap.issueTitle ?? shortId(ap.id), leftWidth - 20);
     const badge = ap.stepKey ?? ap.type;
-    const stepStr = padEnd(badge ? `${DIM}[${badge}]${R}` : "", 18);
+    const stepStr = fit(badge ? `${DIM}[${badge}]${R}` : "", 18);
     const row = `${cursor} ${stepStr} ${title}`;
     lines.push(isSelected ? row : `${DIM}${row}${R}`);
   }
@@ -76,5 +76,5 @@ export function renderApprovals(state: ConsoleState, layout: LayoutRegions): str
   const leftLines = buildListLines(state, layout.contentHeight, leftWidth);
   const detailLines = buildDetailLines(state, rightWidth);
 
-  return zipPanes(leftLines, detailLines, leftWidth);
+  return zipPanes(leftLines, detailLines, leftWidth, rightWidth, layout.contentHeight);
 }

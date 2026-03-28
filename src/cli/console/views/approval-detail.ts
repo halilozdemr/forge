@@ -1,7 +1,7 @@
 import type { ApprovalDetail, ApprovalSummary, ConsoleState, LayoutRegions } from "../types.js";
 import {
   BOLD, CYAN, DIM, GREEN, RED, YELLOW, R,
-  clip, colorStatus, formatRelativeTime, hr, shortId, sectionDivider, sectionHeader,
+  clip, fit, colorStatus, formatRelativeTime, hr, shortId, sectionDivider, sectionHeader,
 } from "../layout.js";
 
 function currentApproval(state: ConsoleState): ApprovalDetail | ApprovalSummary | null {
@@ -30,7 +30,7 @@ function buildActionLines(detail: ApprovalDetail | null, width: number): string[
   for (const action of detail.availableActions) {
     const color = action.key === "a" ? GREEN : RED;
     const key = `${color}[${action.key}]${R}`;
-    lines.push(`  ${key} ${action.label.padEnd(8)} ${clip(action.description, 100)}`);
+    lines.push(`  ${key} ${fit(action.label, 8)} ${clip(action.description, 100)}`);
   }
 
   return lines;

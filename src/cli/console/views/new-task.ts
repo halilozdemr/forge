@@ -1,7 +1,7 @@
 import type { ConsoleState, LayoutRegions } from "../types.js";
 import {
   BOLD, DIM, GREEN, YELLOW, RED, CYAN, R,
-  padEnd, clip, sectionHeader,
+  fit, clip, sectionHeader,
 } from "../layout.js";
 
 /**
@@ -37,7 +37,7 @@ export function renderNewTask(state: ConsoleState, layout: LayoutRegions): strin
 
   function row(content: string, focused: boolean): string {
     const b = focused ? CYAN : DIM;
-    return `${lm}${b}│${R}${padEnd(clip(content, innerW), innerW)}${b}│${R}`;
+    return `${lm}${b}│${R}${fit(content, innerW)}${b}│${R}`;
   }
 
   // ── Header ─────────────────────────────────────────────────────────────────

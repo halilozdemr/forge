@@ -1,7 +1,7 @@
 import type { ConsoleState, LayoutRegions, WorkflowStep } from "../types.js";
 import {
   BOLD, CYAN, DIM, GREEN, RED, YELLOW, R,
-  colorStatus, clip, hr, shortId, formatRelativeTime, sectionDivider, sectionHeader,
+  colorStatus, fit, clip, hr, shortId, formatRelativeTime, sectionDivider, sectionHeader,
 } from "../layout.js";
 
 // ── Step timeline column widths ────────────────────────────────────────────────
@@ -44,10 +44,10 @@ function stepDuration(step: WorkflowStep): string {
  */
 function buildStepRow(step: WorkflowStep): string {
   const ind  = stepIndicator(step.status, step.attempts);
-  const key  = clip(step.stepKey, STEP_KEY_W).padEnd(STEP_KEY_W);
-  const ag   = clip(`@${step.agentSlug}`, AGENT_W).padEnd(AGENT_W);
-  const stat = clip(step.status ?? "pending", STEP_STAT_W).padEnd(STEP_STAT_W);
-  const time = stepDuration(step).padEnd(STEP_TIME_W);
+  const key  = fit(step.stepKey, STEP_KEY_W);
+  const ag   = fit(`@${step.agentSlug}`, AGENT_W);
+  const stat = fit(step.status ?? "pending", STEP_STAT_W);
+  const time = fit(stepDuration(step), STEP_TIME_W);
 
   const s = (step.status ?? "").toLowerCase();
 

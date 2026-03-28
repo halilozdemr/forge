@@ -1,7 +1,7 @@
 import type { ConsoleState, LayoutRegions, WorkflowSummary } from "../types.js";
 import {
   BOLD, CYAN, DIM, RED, YELLOW, R,
-  colorStatus, padEnd, clip, shortId, hr, zipPanes, formatRelativeTime, sectionHeader,
+  colorStatus, fit, clip, shortId, hr, zipPanes, formatRelativeTime, sectionHeader,
 } from "../layout.js";
 
 // ── Column widths ─────────────────────────────────────────────────────────────
@@ -57,24 +57,24 @@ function isHighlight(status: string): boolean {
 function buildRow(wf: WorkflowSummary, isSelected: boolean, titleW: number): string {
   const prog      = `${wf.progress?.completed ?? 0}/${wf.progress?.total ?? 0}`;
   const statusText = clip(wf.status ?? "", STATUS_W);
-  const typeStr    = clip(wf.type ?? "", TYPE_W).padEnd(TYPE_W);
-  const progStr    = clip(prog, PROG_W).padEnd(PROG_W);
+  const typeStr    = fit(wf.type ?? "", TYPE_W);
+  const progStr    = fit(prog, PROG_W);
   const titleStr   = clip(wf.issueTitle ?? shortId(wf.id), titleW);
 
   if (isSelected) {
-    const statusCol = padEnd(colorStatus(statusText), STATUS_W);
+    const statusCol = fit(colorStatus(statusText), STATUS_W);
     return `${CYAN}>${R} ${statusCol}${typeStr}${progStr}${titleStr}`;
   }
 
   if (isHighlight(wf.status ?? "")) {
     // Colored status + DIM rest: the ${R} inside colorStatus resets; ${DIM} then
     // re-applies to type/prog/title without a collision.
-    const statusCol = padEnd(colorStatus(statusText), STATUS_W);
+    const statusCol = fit(colorStatus(statusText), STATUS_W);
     return `  ${statusCol}${DIM}${typeStr}${progStr}${titleStr}${R}`;
   }
 
   // Plain DIM for completed / cancelled / pending / unknown
-  return `${DIM}  ${statusText.padEnd(STATUS_W)}${typeStr}${progStr}${titleStr}${R}`;
+  return `${DIM}  ${fit(statusText, STATUS_W)}${typeStr}${progStr}${titleStr}${R}`;
 }
 
 // ── Left pane ─────────────────────────────────────────────────────────────────
@@ -206,5 +206,5 @@ export function renderWorkflows(state: ConsoleState, layout: LayoutRegions): str
   const leftLines  = buildListLines(state, layout.contentHeight, leftWidth);
   const rightLines = buildPreviewLines(state, rightWidth);
 
-  return zipPanes(leftLines, rightLines, leftWidth);
+  return zipPanes(leftLines, rightLines, leftWidth, rightWidth, layout.contentHeight);
 }

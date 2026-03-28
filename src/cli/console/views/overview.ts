@@ -1,7 +1,7 @@
 import type { ConsoleState, LayoutRegions } from "../types.js";
 import {
   BOLD, DIM, R,
-  colorStatus, padEnd, clip, shortId, formatDuration,
+  colorStatus, fit, clip, shortId, formatDuration,
   sectionHeader, hr,
 } from "../layout.js";
 
@@ -51,10 +51,10 @@ export function renderOverview(state: ConsoleState, layout: LayoutRegions): stri
       try {
         const prog = `${wf.progress?.completed ?? 0}/${wf.progress?.total ?? 0}`;
         const title = clip(wf.issueTitle ?? shortId(wf.id), titleW);
-        const statusStr = padEnd(colorStatus(clip(wf.status ?? "", statusW)), statusW);
-        const step = clip(wf.currentStepKey ?? "—", stepW);
-        const typeStr = (wf.type ?? "").padEnd(typeW);
-        lines.push(`  ${statusStr}${typeStr}${prog.padEnd(progW)}${step.padEnd(stepW)}${title}`);
+        const statusStr = fit(colorStatus(clip(wf.status ?? "", statusW)), statusW);
+        const step = fit(wf.currentStepKey ?? "—", stepW);
+        const typeStr = fit(wf.type ?? "", typeW);
+        lines.push(`  ${statusStr}${typeStr}${fit(prog, progW)}${step}${title}`);
       } catch {
         lines.push(`  ${DIM}${shortId(wf.id)}${R}`);
       }

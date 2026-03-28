@@ -13,6 +13,7 @@ import type {
 } from "./types.js";
 import {
   getLayout,
+  normalizeLines,
   visibleLength,
   hr,
   shortId,
@@ -360,11 +361,10 @@ export async function startForgeConsoleShell(opts: ForgeConsoleShellOptions): Pr
       ),
     );
 
-    // Cursor-home + overwrite in-place (no full-screen clear).
-    // \x1b[H   = move cursor to 1,1 without blanking the screen
-    // \x1b[K   = erase from cursor to end of line (clears stale chars on shorter lines)
-    // \x1b[J   = erase from cursor to end of screen (clears stale rows on shorter frames)
-    const frame = "\x1b[H" + lines.map((l) => l + "\x1b[K").join("\n") + "\n\x1b[J";
+    // Normalize every frame to the full viewport width/height and avoid a trailing
+    // newline, which would otherwise scroll the terminal when the last row is written.
+    const frameLines = normalizeLines(lines, layout.height, layout.width);
+    const frame = "\x1b[H" + frameLines.join("\r\n") + "\x1b[J";
     if (frame === lastFrame) return;
     lastFrame = frame;
     process.stdout.write(frame);
@@ -1057,7 +1057,7 @@ export async function startForgeConsoleShell(opts: ForgeConsoleShellOptions): Pr
     process.stdin.on("keypress", keypressHandler);
   }
 
-  process.stdout.write("\x1b[?25l"); // hide cursor
+  process.stdout.write("\x1b[?25l\x1b[H\x1b[2J"); // hide cursor and clear initial frame
   appendLog(state, {
     text: "console log stream ready",
     level: "info",
