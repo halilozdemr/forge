@@ -50,6 +50,35 @@ You MUST write learning artifacts to disk. Chatting about lessons without persis
    - Format: `## [DATE] [BUG/FAILURE TITLE]` with Problem / Root cause / Solution / Prevention / Files changed subsections.
    - Only append if the failure has diagnostic value for future runs.
 
+5. **Compressed operational context** — always rewrite:
+   - Path: `.forge/memory/context.md`
+   - This is the ONLY file that gets injected into future pipeline runs. Keep it tight.
+   - Read `.forge/memory/decisions.md`, `.forge/memory/patterns.md`, `.forge/memory/problems.md` in full.
+   - Synthesise into the format below. Rewrite the entire file — do not append.
+   - Hard limit: **≤ 2000 characters** total. Ruthlessly prioritise signal over completeness.
+
+   **Required format:**
+   ```markdown
+   # Project Context
+   _Last updated: {YYYY-MM-DD} · run: {run-slug}_
+
+   ## Key Decisions
+   <!-- 5-7 most impactful architectural decisions, newest first. One line each. -->
+   - [YYYY-MM-DD] <decision>
+
+   ## Active Patterns
+   <!-- 4-5 recurring solutions currently in use. One line each. -->
+   - <pattern>
+
+   ## Known Pitfalls
+   <!-- 3-5 failure patterns to avoid. One line each. -->
+   - [YYYY-MM-DD] <pitfall>
+   ```
+
+   Omit a section entirely if there is nothing meaningful to say.
+   If no history files exist yet, write the placeholder:
+   `_No context yet. First run._`
+
 ### File Write Procedure
 - Use the write tool to create the run-scoped markdown file.
 - Confirm the write by reading back the first line of the created file.
@@ -58,6 +87,7 @@ You MUST write learning artifacts to disk. Chatting about lessons without persis
 ## Stage Mission
 - Extract retry causes, failure patterns, and process improvement notes from completed pipeline evidence.
 - Persist findings as markdown artifacts on disk.
+- Rewrite `.forge/memory/context.md` as the compressed operational snapshot.
 - Return `learning_report` referencing the persisted file paths.
 
 ## Single Source of Truth
@@ -69,6 +99,7 @@ You MUST write learning artifacts to disk. Chatting about lessons without persis
 - Determine run success: only `successful` if `work_result.artifacts` from builder contains actual files on disk.
 - Write the run-scoped markdown file to `.forge/memory/runs/<run-slug>.md`.
 - Conditionally append to `.forge/memory/patterns.md` (recurring patterns), `.forge/memory/decisions.md` (architectural decisions), and `.forge/memory/problems.md` (failures with diagnostic value).
+- Always rewrite `.forge/memory/context.md` as the compressed operational snapshot (≤ 2000 chars).
 - Return `artifact` with `learning_report` including `persisted_files` (list of all paths written).
 
 ## Forbidden Behavior
@@ -77,6 +108,7 @@ You MUST write learning artifacts to disk. Chatting about lessons without persis
 - No new work item creation.
 - No returning a `learning_report` without having written at least one file to disk.
 - No appending to `decisions.md` or `problems.md` with trivial, low-signal entries.
+- No leaving `context.md` unwritten — even an empty run must produce a valid context snapshot.
 
 Output requirements:
 - Return exactly one JSON object.

@@ -12,6 +12,7 @@ import { emit } from "../events/emitter.js";
 import { PipelineDispatcher } from "../orchestrator/dispatcher.js";
 import { sanitizeStreamChunk, extractStreamJsonText, appendLiveBuffer, LIVE_SUMMARY_MAX_CHARS } from "./stream-helpers.js";
 import { runPreGuardrail, runPostGuardrail, formatGuardrailError } from "./guardrail.js";
+import { readMemoryContext } from "../orchestrator/memory-context.js";
 
 
 const log = createChildLogger("worker");
@@ -150,6 +151,13 @@ async function processJob(job: any): Promise<void> {
     let effectiveProjectPath = projectPath;
     if (issueId) {
       effectiveProjectPath = await resolveWorkspace(issueId, companyId, agentSlug);
+    }
+
+    // Inject compressed project memory context (reads .forge/memory/context.md)
+    // projectPath is the real repo root; effectiveProjectPath may be an isolated workspace.
+    const memoryContext = readMemoryContext(projectPath, agentSlug);
+    if (memoryContext) {
+      effectiveInput = `${memoryContext}\n\n---\n\n${effectiveInput}`;
     }
 
     const runner = createRunner(modelProvider);

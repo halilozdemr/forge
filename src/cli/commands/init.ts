@@ -655,6 +655,7 @@ async function runInit(opts: { yes?: boolean }): Promise<void> {
       ["memory/decisions.md",    "memory/decisions.md"],
       ["memory/patterns.md",     "memory/patterns.md"],
       ["memory/problems.md",     "memory/problems.md"],
+      ["memory/context.md",      "memory/context.md"],
       ["sprints/active_sprint.json", "sprints/active_sprint.json"],
       ["sprints/backlog.json",   "sprints/backlog.json"],
       ["guardrail.json",         "guardrail.json"],
