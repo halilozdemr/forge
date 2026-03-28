@@ -29,8 +29,18 @@ const program = new Command("forge");
 
 program
   .name("forge")
-  .description("Forge — AI agent orchestration platform")
-  .version("3.0.0");
+  .description("Forge — bootstrap projects and run AI workflows locally")
+  .version("3.0.0")
+  .addHelpText(
+    "after",
+    `
+Quick start:
+  forge init
+  forge start
+  forge feature create "add login screen" --mode structured
+  forge bug create "fix crash on launch" --mode fast
+`,
+  );
 
 program.addCommand(initCommand());
 program.addCommand(doctorCommand());

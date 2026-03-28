@@ -10,7 +10,7 @@ const __dirname = dirname(__filename);
 import { intro, outro, text, confirm, select, p } from "../prompts.js";
 import { loadConfig } from "../../utils/config.js";
 import { createChildLogger } from "../../utils/logger.js";
-import { PROVIDER_PRESETS, ProviderStrategy, CustomAgentDef } from "../../db/seed.js";
+import { PROVIDER_PRESETS, ProviderStrategy } from "../../db/seed.js";
 import { syncProjectOpenCodeConfig } from "../../opencode/project-config.js";
 
 const log = createChildLogger("init");
@@ -19,8 +19,15 @@ const TEMPLATES_DIR = join(import.meta.dirname, "..", "..", "scaffold", "templat
 
 export function initCommand(): Command {
   return new Command("init")
-    .description("Initialize Forge in the current project")
-    .option("-y, --yes", "Quickstart: accept all defaults, skip interactive prompts")
+    .description("Bootstrap Forge in the current project")
+    .option("-y, --yes", "Use defaults and skip interactive prompts")
+    .addHelpText(
+      "after",
+      `
+Bootstrap includes provider detection, model default setup, optional notifications,
+and writing .forge/config.json for the current project.
+`,
+    )
     .action(runInit);
 }
 
@@ -265,7 +272,7 @@ const FALLBACK_MODELS: Partial<Record<Provider, string[]>> = {
 // ─── Main ──────────────────────────────────────────────────────────────────────
 
 async function runInit(opts: { yes?: boolean }): Promise<void> {
-  intro("Forge v3 — AI Agent Orchestration");
+  intro("Forge v3 — Project Bootstrap");
 
   const quickstart = opts.yes ?? false;
 
@@ -308,53 +315,18 @@ async function runInit(opts: { yes?: boolean }): Promise<void> {
     "gemini-api":  envGeminiApiKey   ? fetchGeminiApiModels(envGeminiApiKey)    : Promise.resolve(null),
   };
 
-  // ── Setup path ───────────────────────────────────────────────────────────────
-  let advanced = false;
-  if (!quickstart) {
-    const setupPath = await select({
-      message: "Setup path:",
-      options: [
-        { value: "quickstart", label: "Quickstart", hint: "Sensible defaults, ready to run in 30 seconds" },
-        { value: "advanced",   label: "Advanced",   hint: "Customize providers, models, agents, and more" },
-      ],
-    });
-    advanced = setupPath === "advanced";
-  }
-
-  // ── Project info ─────────────────────────────────────────────────────────────
+  // ── Project info (derived from cwd) ─────────────────────────────────────────
   const defaultProjectName = resolve(process.cwd()).split("/").pop() ?? "my-project";
   const defaultCompanyName = "My Forge";
 
-  let projectName  = defaultProjectName;
-  let projectPath  = process.cwd();
-  let stack        = "other";
-  let description  = "";
-  let companyName  = defaultCompanyName;
+  const projectName  = defaultProjectName;
+  const projectPath  = process.cwd();
+  const stack        = "other";
+  const description  = "";
+  const companyName  = defaultCompanyName;
 
-  if (advanced) {
-    projectName = await text({ message: "Project name:", defaultValue: defaultProjectName });
-    projectPath = await text({ message: "Project path:", defaultValue: process.cwd(), placeholder: process.cwd() });
-    stack = await select({
-      message: "Technology stack:",
-      options: [
-        { value: "nodejs",  label: "Node.js / TypeScript" },
-        { value: "kmp",     label: "Kotlin Multiplatform (KMP)" },
-        { value: "python",  label: "Python" },
-        { value: "go",      label: "Go" },
-        { value: "rust",    label: "Rust" },
-        { value: "java",    label: "Java / Spring" },
-        { value: "other",   label: "Other" },
-      ],
-    });
-    description = await text({ message: "Project description:", placeholder: "A short description of what this project does" });
-    companyName = await text({ message: "Company / team name:", defaultValue: defaultCompanyName });
-  }
-
-  // ── Claude CLI path (advanced only) ─────────────────────────────────────────
+  // ── Claude CLI path (auto) ──────────────────────────────────────────────────
   let claudePath = detectedClaude?.path ?? "claude";
-  if (advanced && !hasClaude) {
-    claudePath = await text({ message: "Claude CLI path:", defaultValue: detectedClaude!.path });
-  }
 
   // ── AI Providers ─────────────────────────────────────────────────────────────
   const availableProviders: Provider[] = [
@@ -376,12 +348,6 @@ async function runInit(opts: { yes?: boolean }): Promise<void> {
   // Seed CLI detected models so buildModelOptions shows them
   if (claudeConfiguredModel) fetchedModels.set("claude-cli", [claudeConfiguredModel]);
   if (codexDetectedModels)   fetchedModels.set("codex-cli",  codexDetectedModels);
-
-  // Apply any prefetched models from env keys
-  const applyPrefetch = async (provider: Provider, promise: Promise<string[] | null>) => {
-    const models = await promise;
-    if (models && models.length > 0) fetchedModels.set(provider, models);
-  };
 
   if (!quickstart) {
     const s = p.spinner();
@@ -556,7 +522,7 @@ async function runInit(opts: { yes?: boolean }): Promise<void> {
       p.log.warn("No providers configured. Agents won't be able to run until you add at least one.");
     }
   } else {
-    // Quickstart: silently pick up env keys and apply prefetched models
+    // --yes: silently pick up env keys and apply prefetched models
     await Promise.all([
       wrapPrefetch(prefetchPromises.openrouter,       "openrouter",     openrouterKey, availableProviders, fetchedModels),
       wrapPrefetch(prefetchPromises["anthropic-api"], "anthropic-api",  anthropicKey,  availableProviders, fetchedModels),
@@ -564,42 +530,51 @@ async function runInit(opts: { yes?: boolean }): Promise<void> {
       wrapPrefetch(prefetchPromises["gemini-api"],    "gemini-api",     geminiApiKey,  availableProviders, fetchedModels),
     ]);
     if (availableProviders.length === 0) {
-      p.log.warn("No providers detected. Run `forge init` (without --yes) to configure.");
+      p.log.warn("No providers detected. Run `forge init` (without --yes) to configure providers.");
     }
   }
+
+  const uniqueProviders = dedupeProviders(availableProviders);
+  availableProviders.length = 0;
+  availableProviders.push(...uniqueProviders);
 
   // ── Model strategy ───────────────────────────────────────────────────────────
   let providerStrategy = buildAutoStrategy(availableProviders, fetchedModels);
+  let modelSetupMode: "automatic" | "manual" = "automatic";
 
-  if (advanced && availableProviders.length > 1) {
-    p.log.step("Agent model assignment (auto-selected):");
-    p.log.message(`  Core workflow agents  (architect, quality-guard): ${providerStrategy.heavy.provider} / ${providerStrategy.heavy.model}`);
-    p.log.message(`  Optional support agents (devops, retrospective-analyst): ${providerStrategy.light.provider} / ${providerStrategy.light.model}`);
+  if (!quickstart && availableProviders.length > 0) {
+    modelSetupMode = await select({
+      message: "Model setup:",
+      options: [
+        {
+          value: "automatic",
+          label: "Automatic",
+          hint: "Forge assigns heavy/light defaults for built-in roles",
+        },
+        {
+          value: "manual",
+          label: "Manual",
+          hint: "Choose heavy and light model defaults",
+        },
+      ],
+    });
 
-    const customize = await confirm({ message: "Customize model assignment?", initialValue: false });
-    if (customize) {
+    if (modelSetupMode === "manual") {
       const heavyOpts = buildModelOptions(availableProviders, "heavy", fetchedModels);
       const lightOpts = buildModelOptions(availableProviders, "light", fetchedModels);
-      const heavyChoice = await select({ message: "Core workflow agents (architect, quality-guard):", options: heavyOpts });
-      const lightChoice = await select({ message: "Optional support agents (devops, retrospective-analyst):", options: lightOpts });
-      const [hProv, hModel] = heavyChoice.split("|");
-      const [lProv, lModel] = lightChoice.split("|");
-      providerStrategy = { heavy: { provider: hProv, model: hModel }, light: { provider: lProv, model: lModel } };
-    }
-  }
-
-  // ── Budget (advanced only) ────────────────────────────────────────────────────
-  let enableBudget  = false;
-  let monthlyBudget = "0";
-
-  if (advanced) {
-    enableBudget = await confirm({ message: "Enable monthly budget limit?", initialValue: false });
-    if (enableBudget) {
-      monthlyBudget = await text({
-        message: "Monthly budget limit (USD):",
-        defaultValue: "50.00",
-        validate: (v) => (isNaN(parseFloat(v)) ? "Must be a number" : undefined),
-      });
+      if (heavyOpts.length > 0 && lightOpts.length > 0) {
+        const heavyChoice = await select({ message: "Heavy model default:", options: heavyOpts });
+        const lightChoice = await select({ message: "Light model default:", options: lightOpts });
+        const heavySelection = await resolveModelChoice(heavyChoice, "Heavy");
+        const lightSelection = await resolveModelChoice(lightChoice, "Light");
+        providerStrategy = {
+          heavy: { provider: heavySelection.provider, model: heavySelection.model },
+          light: { provider: lightSelection.provider, model: lightSelection.model },
+        };
+      } else {
+        p.log.warn("No model options available to customize. Keeping automatic defaults.");
+        modelSetupMode = "automatic";
+      }
     }
   }
 
@@ -607,7 +582,9 @@ async function runInit(opts: { yes?: boolean }): Promise<void> {
   let telegramBotToken = "";
   let telegramChatId   = "";
 
-  const enableTelegram = await confirm({ message: "Enable Telegram notifications?", initialValue: false });
+  const enableTelegram = quickstart
+    ? false
+    : await confirm({ message: "Enable Telegram notifications?", initialValue: false });
   if (enableTelegram) {
     telegramBotToken = await text({
       message: "Telegram Bot Token (from @BotFather):",
@@ -621,106 +598,29 @@ async function runInit(opts: { yes?: boolean }): Promise<void> {
     });
   }
 
-  // ── Agent setup (advanced only) ───────────────────────────────────────────────
-  let useDefaultAgents = true;
-  let customAgents: CustomAgentDef[] | undefined;
-
-  if (advanced) {
-    useDefaultAgents = await confirm({
-      message: "Use official agents? (6 workflow agents: intake-gate, architect, builder, quality-guard + optional: devops, retrospective-analyst)",
-      initialValue: true,
-    });
-
-    if (!useDefaultAgents) {
-      customAgents = [];
-      const defaultPerms = { task: true, read: true, edit: true, write: true, bash: false };
-
-      // eslint-disable-next-line no-constant-condition
-      while (true) {
-        p.log.step(`Agents created so far: ${customAgents.length}`);
-        const addAgent = await confirm({ message: "Add an agent?", initialValue: true });
-
-        if (!addAgent) {
-          if (customAgents.length === 0) {
-            p.log.warn("No agents created — system won't be able to process tasks.");
-            const continueAnyway = await confirm({ message: "Continue with zero agents?", initialValue: false });
-            if (!continueAnyway) continue;
-          }
-          break;
-        }
-
-        const agentName = await text({ message: "Agent name:", placeholder: "e.g. Frontend Builder" });
-        const agentRole = await text({ message: "Agent role/description:", placeholder: "e.g. Implements React components" });
-
-        // Derive slug with collision check
-        let slug = agentName.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/(^_|_$)/g, "");
-        if (customAgents.some((a) => a.slug === slug)) {
-          slug = `${slug}_${customAgents.length}`;
-        }
-
-        // Provider + model selection — show all available options
-        const modelOpts = buildModelOptions(availableProviders, "heavy", fetchedModels);
-        let agentProvider = "";
-        let agentModel = "";
-
-        if (modelOpts.length > 0) {
-          const modelChoice = await select({
-            message: `Provider and model for ${agentName}:`,
-            options: modelOpts,
-          });
-          [agentProvider, agentModel] = modelChoice.split("|");
-        } else {
-          // No providers yet — let user type
-          agentProvider = await text({ message: "Provider (e.g. claude-cli, ollama, openrouter):", placeholder: "claude-cli" });
-          agentModel    = await text({ message: "Model name:", placeholder: "sonnet" });
-        }
-
-        // Handle Ollama with no known models — let user type model name
-        if (agentProvider === "ollama" && agentModel === "__type__") {
-          agentModel = await text({ message: "Ollama model name:", placeholder: "llama3.2" });
-        }
-
-        // reportsTo selection
-        const reportsToOpts = [
-          { value: "__none__", label: "Nobody (top-level agent)" },
-          ...customAgents.map((a) => ({ value: a.slug, label: a.name })),
-        ];
-        const reportsToRaw = await select({ message: "Reports to:", options: reportsToOpts });
-        const reportsTo = reportsToRaw === "__none__" ? null : reportsToRaw;
-
-        customAgents.push({
-          slug,
-          name: agentName,
-          role: agentRole,
-          modelProvider: agentProvider,
-          model: agentModel,
-          reportsTo,
-          permissions: defaultPerms,
-          heartbeatCron: null,
-        });
-
-        p.log.success(`Agent "${agentName}" added (${agentProvider}/${agentModel})`);
-      }
-    }
-  }
+  const modelSetupSummary = `${modelSetupMode === "manual" ? "Manual" : "Automatic"} — heavy=${providerStrategy.heavy.provider}/${providerStrategy.heavy.model}, light=${providerStrategy.light.provider}/${providerStrategy.light.model}`;
+  const notificationsSummary = enableTelegram ? `Telegram (chat ${telegramChatId})` : "None";
+  const filesToWrite = [
+    ".forge/config.json",
+    ".forge/context/project.md",
+    ".forge/context/*, .forge/memory/*, .forge/sprints/*",
+    "README.md (if missing)",
+    ".env (provider keys only, if needed)",
+    ".gitignore (Forge secrets entry)",
+  ];
 
   // ── Summary + confirm ─────────────────────────────────────────────────────────
   if (!quickstart) {
     p.log.step("Configuration summary:");
-    p.log.message(`  Company:        ${companyName}`);
-    p.log.message(`  Project:        ${projectName} (${stack})`);
+    p.log.message(`  Project:        ${projectName}`);
+    p.log.message(`  Path:           ${resolve(projectPath)}`);
     p.log.message(`  Providers:      ${availableProviders.join(", ") || "none"}`);
-    if (useDefaultAgents) {
-      p.log.message(`  Core workflow agents:   ${providerStrategy.heavy.provider} / ${providerStrategy.heavy.model}`);
-      p.log.message(`  Optional support agents: ${providerStrategy.light.provider} / ${providerStrategy.light.model}`);
-    } else {
-      p.log.message(`  Agents:         ${customAgents?.length ?? 0} custom agent(s)`);
-      for (const a of customAgents ?? []) {
-        p.log.message(`    - ${a.name} (${a.modelProvider}/${a.model})`);
-      }
+    p.log.message(`  Model setup:    ${modelSetupSummary}`);
+    p.log.message(`  Notifications:  ${notificationsSummary}`);
+    p.log.message("  Files to write:");
+    for (const file of filesToWrite) {
+      p.log.message(`    - ${file}`);
     }
-    if (enableBudget) p.log.message(`  Budget:         $${monthlyBudget}/month`);
-    if (enableTelegram) p.log.message(`  Telegram:       chat ${telegramChatId}`);
 
     const ok = await confirm({ message: "Write this configuration?", initialValue: true });
     if (!ok) {
@@ -782,9 +682,8 @@ async function runInit(opts: { yes?: boolean }): Promise<void> {
         geminiApi:    geminiApiKey   ? { apiKey: geminiApiKey    } : undefined,
         ollama:       ollamaBaseUrl  ? { baseUrl: ollamaBaseUrl  } : undefined,
       },
-      agentStrategy: useDefaultAgents ? providerStrategy : undefined,
-      agents:        useDefaultAgents ? undefined : customAgents,
-      budget: { enabled: enableBudget, monthlyLimitUsd: parseFloat(monthlyBudget) },
+      agentStrategy: providerStrategy,
+      budget: { enabled: false, monthlyLimitUsd: 0 },
       telegram: enableTelegram ? { botToken: telegramBotToken, chatId: telegramChatId } : undefined,
     };
     await writeFile(join(forgeDir, "config.json"), JSON.stringify(forgeConfig, null, 2));
@@ -861,17 +760,19 @@ async function runInit(opts: { yes?: boolean }): Promise<void> {
 
     s.stop("Forge initialized.");
 
-    p.log.success(`Company "${companyName}" configured`);
-    p.log.success(`Project scaffolded at .forge/`);
-    if (useDefaultAgents) {
-      p.log.success(`9 agents ready — ${providerStrategy.heavy.provider}/${providerStrategy.heavy.model} + ${providerStrategy.light.provider}/${providerStrategy.light.model}`);
-    } else {
-      p.log.success(`${customAgents?.length ?? 0} custom agent(s) configured`);
-    }
-    if (enableBudget) p.log.success(`Budget: $${monthlyBudget}/month`);
-    if (enableTelegram) p.log.success(`Telegram notifications enabled (chat ${telegramChatId})`);
+    p.log.step("Setup complete:");
+    p.log.message(`  Project:        ${projectName}`);
+    p.log.message(`  Path:           ${absProjectPath}`);
+    p.log.message(`  Providers:      ${availableProviders.join(", ") || "none"}`);
+    p.log.message(`  Model setup:    ${modelSetupSummary}`);
+    p.log.message(`  Notifications:  ${notificationsSummary}`);
 
-    outro(`Run \x1b[1mforge start\x1b[0m to launch  ·  \x1b[1mforge doctor\x1b[0m to verify setup`);
+    p.log.step("Next steps:");
+    p.log.message("  forge start");
+    p.log.message('  forge feature create "add login screen" --mode structured');
+    p.log.message('  forge bug create "fix crash on launch" --mode fast');
+
+    outro("Forge is ready.");
   } catch (err) {
     s.stop("Setup failed.");
     log.error({ err }, "Init failed");
@@ -882,7 +783,27 @@ async function runInit(opts: { yes?: boolean }): Promise<void> {
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
-/** Helper used by quickstart path to apply env key + prefetched models */
+function dedupeProviders(providers: Provider[]): Provider[] {
+  return [...new Set(providers)] as Provider[];
+}
+
+async function resolveModelChoice(
+  choice: string,
+  tierLabel: "Heavy" | "Light"
+): Promise<{ provider: string; model: string }> {
+  const [provider, model] = choice.split("|");
+  if (provider === "ollama" && model === "__type__") {
+    const typedModel = await text({
+      message: `${tierLabel} model (Ollama):`,
+      placeholder: "llama3.2",
+      validate: (v) => (!v.trim() ? "Model name is required" : undefined),
+    });
+    return { provider, model: typedModel };
+  }
+  return { provider, model };
+}
+
+/** Helper used by built-in setup paths to apply env key + prefetched models */
 async function wrapPrefetch(
   promise: Promise<string[] | null>,
   provider: Provider,
@@ -1088,7 +1009,8 @@ This project is managed by **Forge** — an AI agent orchestration platform.
 
 \`\`\`bash
 forge start          # Launch the agent team
-forge issue create   # Create a new task
+forge feature create "add login screen" --mode structured
+forge bug create "fix crash on launch" --mode fast
 forge status         # Check system status
 forge doctor         # Verify setup
 \`\`\`

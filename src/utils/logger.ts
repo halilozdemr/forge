@@ -15,3 +15,7 @@ export const logger = pino({
 export function createChildLogger(name: string) {
   return logger.child({ component: name });
 }
+
+export function setGlobalLogLevel(level: string): void {
+  logger.level = level;
+}

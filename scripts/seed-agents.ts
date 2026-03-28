@@ -4,7 +4,7 @@ import os from "os";
 import matter from "gray-matter";
 import { PrismaClient } from "@prisma/client";
 import { fileURLToPath } from "url";
-import { buildDefaultClientConfigForSlug, OFFICIAL_AGENT_SLUGS } from "../src/agents/constants.js";
+import { buildDefaultClientConfigForSlug, ALL_BUILTIN_AGENT_SLUGS } from "../src/agents/constants.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -34,9 +34,9 @@ async function main() {
     process.exit(1);
   }
 
-  console.log(`Seeding ${OFFICIAL_AGENT_SLUGS.length} official agents from ${officialAgentsDir}`);
+  console.log(`Seeding ${ALL_BUILTIN_AGENT_SLUGS.length} built-in agents from ${officialAgentsDir}`);
 
-  for (const slug of OFFICIAL_AGENT_SLUGS) {
+  for (const slug of ALL_BUILTIN_AGENT_SLUGS) {
     const promptFile = path.join(officialAgentsDir, `${slug}.md`);
     if (!fs.existsSync(promptFile)) {
       console.warn(`Skipping ${slug}: prompt file not found at ${promptFile}`);
@@ -69,7 +69,7 @@ async function main() {
         model,
         promptFile,
         permissions: permissionsStr,
-        clientConfig: JSON.stringify(buildDefaultClientConfigForSlug(slug, "official")),
+        clientConfig: JSON.stringify(buildDefaultClientConfigForSlug(slug)),
       },
       create: {
         companyId: company.id,
@@ -82,14 +82,14 @@ async function main() {
         status: "idle",
         permissions: permissionsStr,
         promptFile,
-        clientConfig: JSON.stringify(buildDefaultClientConfigForSlug(slug, "official")),
+        clientConfig: JSON.stringify(buildDefaultClientConfigForSlug(slug)),
       },
     });
 
     console.log(`Seeded ${slug} -> provider: ${modelProvider}, model: ${model}`);
   }
 
-  console.log("Official agent seeding complete.");
+  console.log("Built-in agent seeding complete.");
   await prisma.$disconnect();
 }
 

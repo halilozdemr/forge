@@ -2,7 +2,7 @@ import { readFileSync, existsSync } from "fs";
 import { join } from "path";
 import matter from "gray-matter";
 import { createChildLogger } from "../utils/logger.js";
-import { OFFICIAL_AGENT_PROMPT_DIR, OFFICIAL_AGENT_SLUGS } from "./constants.js";
+import { OFFICIAL_AGENT_PROMPT_DIR, ALL_BUILTIN_AGENT_SLUGS } from "./constants.js";
 
 const log = createChildLogger("agent-loader");
 
@@ -72,7 +72,7 @@ export function loadBuiltinAgents(): Map<string, AgentDefinition> {
   const defaultsDir = OFFICIAL_AGENT_PROMPT_DIR;
   const agents = new Map<string, AgentDefinition>();
 
-  for (const slug of OFFICIAL_AGENT_SLUGS) {
+  for (const slug of ALL_BUILTIN_AGENT_SLUGS) {
     const filePath = join(defaultsDir, `${slug}.md`);
     if (existsSync(filePath)) {
       try {
