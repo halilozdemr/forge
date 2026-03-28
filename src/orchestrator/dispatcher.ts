@@ -619,6 +619,61 @@ export class PipelineDispatcher {
         },
       });
       emit({ type: "issue.updated", issueId: pipelineRun.issueId, status: "done" });
+      await this.generateProvenanceBundle(pipelineRunId, pipelineRun.issueId);
+    }
+  }
+
+  private async generateProvenanceBundle(pipelineRunId: string, issueId: string): Promise<void> {
+    try {
+      const [stepRuns, costEvents, pipelineRun] = await Promise.all([
+        this.db.pipelineStepRun.findMany({ where: { pipelineRunId } }),
+        this.db.costEvent.findMany({ where: { issueId } }),
+        this.db.pipelineRun.findUnique({ where: { id: pipelineRunId } }),
+      ]);
+
+      if (!pipelineRun) return;
+
+      const totalInputTokens = costEvents.reduce((s, e) => s + e.inputTokens, 0);
+      const totalOutputTokens = costEvents.reduce((s, e) => s + e.outputTokens, 0);
+      const totalUsd = costEvents.reduce((s, e) => s + e.costUsd, 0);
+
+      const bundle = {
+        artifactType: "provenance_bundle",
+        pipelineId: pipelineRunId,
+        requestType: pipelineRun.requestType,
+        completedAt: new Date().toISOString(),
+        steps: stepRuns.map((s) => ({
+          key: s.stepKey,
+          agentSlug: s.agentSlug,
+          status: s.status,
+          completedAt: s.completedAt?.toISOString() ?? null,
+          gateResult: s.status === "completed" ? "pass" : s.status === "failed" ? "fail" : "skip",
+        })),
+        cost: {
+          totalInputTokens,
+          totalOutputTokens,
+          totalUsd: Math.round(totalUsd * 1_000_000) / 1_000_000,
+          eventCount: costEvents.length,
+        },
+      };
+
+      await this.db.issueWorkProduct.create({
+        data: {
+          issueId,
+          agentSlug: "system",
+          type: "analysis",
+          title: "Provenance Bundle",
+          content: JSON.stringify(bundle, null, 2),
+          pipelineRunId,
+          artifactType: "provenance_bundle",
+          structuredPayload: JSON.stringify(bundle),
+          schemaVersion: "v1.0",
+        },
+      });
+
+      log.info({ pipelineRunId, steps: stepRuns.length, totalUsd: bundle.cost.totalUsd }, "Provenance bundle generated");
+    } catch (err) {
+      log.warn({ pipelineRunId, err: (err as Error).message }, "Failed to generate provenance bundle — non-fatal");
     }
   }
 

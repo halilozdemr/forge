@@ -24,6 +24,7 @@ import { logsCommand } from "./commands/logs.js";
 import { workflowCommand } from "./commands/workflow.js";
 import { featureCommand } from "./commands/feature.js";
 import { bugCommand } from "./commands/bug.js";
+import { setupCommand, planCommand, workCommand, reviewCommand, releaseCommand } from "./commands/verbs.js";
 
 const program = new Command("forge");
 
@@ -66,5 +67,10 @@ program.addCommand(logsCommand());
 program.addCommand(workflowCommand());
 program.addCommand(featureCommand());
 program.addCommand(bugCommand());
+program.addCommand(setupCommand());
+program.addCommand(planCommand());
+program.addCommand(workCommand());
+program.addCommand(reviewCommand());
+program.addCommand(releaseCommand());
 
 program.parse(process.argv);

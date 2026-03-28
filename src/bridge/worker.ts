@@ -11,6 +11,7 @@ import { decrypt, redactSecrets } from "../utils/crypto.js";
 import { emit } from "../events/emitter.js";
 import { PipelineDispatcher } from "../orchestrator/dispatcher.js";
 import { sanitizeStreamChunk, extractStreamJsonText, appendLiveBuffer, LIVE_SUMMARY_MAX_CHARS } from "./stream-helpers.js";
+import { runPreGuardrail, runPostGuardrail, formatGuardrailError } from "./guardrail.js";
 
 
 const log = createChildLogger("worker");
@@ -138,6 +139,12 @@ async function processJob(job: any): Promise<void> {
 
     if (data.pipelineStepRunId) {
       await dispatcher.markStepStarted(data.pipelineStepRunId);
+    }
+
+    // Pre-run guardrail: block dangerous operations before execution
+    const preCheck = runPreGuardrail(effectiveInput, modelProvider);
+    if (preCheck.blocked) {
+      throw new Error(formatGuardrailError("pre", preCheck.violations));
     }
 
     let effectiveProjectPath = projectPath;
@@ -268,6 +275,14 @@ async function processJob(job: any): Promise<void> {
 
     await flushLiveSummary(true);
     await flushLogs(true);
+
+    // Post-run guardrail: check output for credential leaks or private keys
+    if (result.success && result.output) {
+      const postCheck = runPostGuardrail(result.output, modelProvider);
+      if (postCheck.blocked) {
+        throw new Error(formatGuardrailError("post", postCheck.violations));
+      }
+    }
 
     if (result.tokenUsage) {
       const costUsd = estimateCost(modelProvider, agentModel, result.tokenUsage.input, result.tokenUsage.output);
