@@ -30,15 +30,30 @@ type GuardrailConfig = {
   rules: Record<string, { severity: GuardrailSeverity }>;
 };
 
-// Load .forge/guardrail.json overrides from project root (CWD)
+// undefined = not yet loaded; null = loaded but no file found
+let _configCache: GuardrailConfig | null | undefined = undefined;
+
+// Loaded once per process lifetime. Config changes require a server restart,
+// which is consistent with how all other .forge/*.json configs behave.
 function loadConfig(): GuardrailConfig | null {
+  if (_configCache !== undefined) return _configCache;
   try {
     const configPath = join(process.cwd(), ".forge", "guardrail.json");
-    if (!existsSync(configPath)) return null;
-    return JSON.parse(readFileSync(configPath, "utf-8")) as GuardrailConfig;
+    if (!existsSync(configPath)) {
+      _configCache = null;
+      return null;
+    }
+    _configCache = JSON.parse(readFileSync(configPath, "utf-8")) as GuardrailConfig;
+    return _configCache;
   } catch {
+    _configCache = null;
     return null;
   }
+}
+
+/** Exported for tests — resets the module-level cache. */
+export function _resetConfigCache(): void {
+  _configCache = undefined;
 }
 
 function applySeverityOverrides(rules: GuardrailRule[], config: GuardrailConfig | null): GuardrailRule[] {

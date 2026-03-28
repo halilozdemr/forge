@@ -1,5 +1,6 @@
 import { Command } from "commander";
 import { loadConfig } from "../../utils/config.js";
+import { resolveExecutionMode, describeExecutionMode, type ExecutionMode } from "../execution-mode.js";
 
 function baseUrl(): string {
   return `http://localhost:${loadConfig().port}`;
@@ -81,31 +82,49 @@ Examples:
     });
 }
 
-// forge work — full fast pipeline, optional --all for end-to-end
+// forge work — pipeline with mode selection; --all forces fast mode, no prompts
 export function workCommand(): Command {
   return new Command("work")
-    .description("Implement a task: full fast pipeline (intake → build → ship)")
+    .description("Implement a task (prompts for mode; --all forces fast end-to-end)")
     .argument("<title>", "What to implement")
     .option("--description <desc>", "Additional context")
-    .option("--all", "Run pipeline end-to-end without pausing for approval")
+    .option("--all", "Force fast mode, skip mode prompt, run end-to-end without approval gates")
     .addHelpText(
       "after",
       `
 Examples:
-  forge work "add dark mode toggle"
-  forge work "migrate users table" --description "use Prisma migration" --all
+  forge work "add dark mode toggle"               # prompts for fast/structured
+  forge work "migrate users table" --all          # fast mode, no prompt, no gates
+  forge work "redesign checkout" --all --description "mobile first"
 `,
     )
     .action(async (title: string, opts: { description?: string; all?: boolean }) => {
       try {
+        let mode: ExecutionMode;
+        let modeSource: "flag" | "prompt" | "default";
+
+        if (opts.all) {
+          // --all: bypass mode prompt, force fast pipeline end-to-end
+          mode = "fast";
+          modeSource = "flag";
+        } else {
+          // No --all: prompt user for fast vs structured (same UX as forge feature create)
+          const selection = await resolveExecutionMode(undefined);
+          mode = selection.mode;
+          modeSource = selection.source;
+        }
+
         const result = await api<IntakeResult>("/v1/intake/requests", "POST", {
           source: "cli",
           type: "feature",
-          title: opts.all ? `[work:all] ${title}` : title,
+          title,
           description: opts.description,
-          executionMode: "fast",
+          executionMode: mode,
           requestedBy: "cli",
         });
+
+        const modeNote = modeSource === "default" ? " (defaulted)" : "";
+        console.log(`\n  Mode: ${describeExecutionMode(mode)}${modeNote}`);
         printResult("Work started.", result);
       } catch (err: any) {
         console.error(`\x1b[31mError: ${err.message}\x1b[0m`);
