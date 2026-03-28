@@ -1,6 +1,7 @@
 import { Command } from "commander";
 import { loadConfig } from "../../utils/config.js";
 import { resolveExecutionMode, describeExecutionMode, type ExecutionMode } from "../execution-mode.js";
+import { runInit } from "./init.js";
 
 function baseUrl(): string {
   return `http://localhost:${loadConfig().port}`;
@@ -39,14 +40,10 @@ function printResult(label: string, result: IntakeResult): void {
 export function setupCommand(): Command {
   return new Command("setup")
     .description("Initialize Forge in the current project (alias: forge init)")
+    .option("-y, --yes", "Use defaults and skip interactive prompts")
     .addHelpText("after", "\n  Equivalent to: forge init\n")
-    .action(async () => {
-      const { spawnSync } = await import("child_process");
-      const result = spawnSync(process.argv[0], [process.argv[1], "init"], {
-        stdio: "inherit",
-        env: process.env,
-      });
-      process.exit(result.status ?? 0);
+    .action(async (opts: { yes?: boolean }) => {
+      await runInit(opts);
     });
 }
 

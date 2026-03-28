@@ -271,7 +271,7 @@ const FALLBACK_MODELS: Partial<Record<Provider, string[]>> = {
 
 // ─── Main ──────────────────────────────────────────────────────────────────────
 
-async function runInit(opts: { yes?: boolean }): Promise<void> {
+export async function runInit(opts: { yes?: boolean }): Promise<void> {
   intro("Forge v3 — Project Bootstrap");
 
   const quickstart = opts.yes ?? false;
