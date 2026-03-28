@@ -657,6 +657,7 @@ async function runInit(opts: { yes?: boolean }): Promise<void> {
       ["memory/problems.md",     "memory/problems.md"],
       ["sprints/active_sprint.json", "sprints/active_sprint.json"],
       ["sprints/backlog.json",   "sprints/backlog.json"],
+      ["guardrail.json",         "guardrail.json"],
     ];
     for (const [src, dst] of staticCopies) {
       const srcPath = join(TEMPLATES_DIR, src);

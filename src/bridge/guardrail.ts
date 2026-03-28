@@ -1,8 +1,10 @@
+import { existsSync, readFileSync } from "fs";
+import { join } from "path";
 import { createChildLogger } from "../utils/logger.js";
 
 const log = createChildLogger("guardrail");
 
-export type GuardrailSeverity = "deny" | "warn";
+export type GuardrailSeverity = "deny" | "warn" | "off";
 
 export interface GuardrailRule {
   id: string;
@@ -15,7 +17,7 @@ export interface GuardrailRule {
 export interface GuardrailViolation {
   ruleId: string;
   description: string;
-  severity: GuardrailSeverity;
+  severity: Exclude<GuardrailSeverity, "off">;
   match: string;
 }
 
@@ -24,8 +26,32 @@ export interface GuardrailResult {
   violations: GuardrailViolation[];
 }
 
+type GuardrailConfig = {
+  rules: Record<string, { severity: GuardrailSeverity }>;
+};
+
+// Load .forge/guardrail.json overrides from project root (CWD)
+function loadConfig(): GuardrailConfig | null {
+  try {
+    const configPath = join(process.cwd(), ".forge", "guardrail.json");
+    if (!existsSync(configPath)) return null;
+    return JSON.parse(readFileSync(configPath, "utf-8")) as GuardrailConfig;
+  } catch {
+    return null;
+  }
+}
+
+function applySeverityOverrides(rules: GuardrailRule[], config: GuardrailConfig | null): GuardrailRule[] {
+  if (!config?.rules) return rules;
+  return rules.map((rule) => {
+    const override = config.rules[rule.id];
+    if (!override) return rule;
+    return { ...rule, severity: override.severity };
+  });
+}
+
 // Pre-run rules: checked against agent input before execution
-const PRE_RUN_RULES: GuardrailRule[] = [
+const PRE_RUN_RULES_BASE: GuardrailRule[] = [
   {
     id: "R01",
     description: "Force push without lease",
@@ -89,7 +115,7 @@ const PRE_RUN_RULES: GuardrailRule[] = [
 ];
 
 // Post-run rules: checked against agent output after execution
-const POST_RUN_RULES: GuardrailRule[] = [
+const POST_RUN_RULES_BASE: GuardrailRule[] = [
   {
     id: "R11",
     description: "Output may contain hardcoded secret",
@@ -111,15 +137,19 @@ const POST_RUN_RULES: GuardrailRule[] = [
 ];
 
 function runRules(text: string, rules: GuardrailRule[], provider: string): GuardrailResult {
+  const config = loadConfig();
+  const effectiveRules = applySeverityOverrides(rules, config);
   const violations: GuardrailViolation[] = [];
-  for (const rule of rules) {
+
+  for (const rule of effectiveRules) {
+    if (rule.severity === "off") continue;
     if (rule.providers && !rule.providers.includes(provider)) continue;
     const match = rule.pattern.exec(text);
     if (match) {
       violations.push({
         ruleId: rule.id,
         description: rule.description,
-        severity: rule.severity,
+        severity: rule.severity as Exclude<GuardrailSeverity, "off">,
         match: match[0].slice(0, 100),
       });
     }
@@ -128,7 +158,7 @@ function runRules(text: string, rules: GuardrailRule[], provider: string): Guard
 }
 
 export function runPreGuardrail(input: string, provider: string): GuardrailResult {
-  const result = runRules(input, PRE_RUN_RULES, provider);
+  const result = runRules(input, PRE_RUN_RULES_BASE, provider);
   if (result.violations.length > 0) {
     log.warn({ provider, rules: result.violations.map((v) => v.ruleId) }, "Pre-run guardrail violations detected");
   }
@@ -136,7 +166,7 @@ export function runPreGuardrail(input: string, provider: string): GuardrailResul
 }
 
 export function runPostGuardrail(output: string, provider: string): GuardrailResult {
-  const result = runRules(output, POST_RUN_RULES, provider);
+  const result = runRules(output, POST_RUN_RULES_BASE, provider);
   if (result.violations.length > 0) {
     log.warn({ provider, rules: result.violations.map((v) => v.ruleId) }, "Post-run guardrail violations detected");
   }

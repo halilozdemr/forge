@@ -1,0 +1,18 @@
+{
+  "_comment": "Forge Guardrail Policy — set severity to 'warn' to soften a rule, or 'off' to disable it",
+  "rules": {
+    "R01": { "severity": "deny",  "description": "Force push without lease" },
+    "R02": { "severity": "deny",  "description": "Skip pre-commit hooks (--no-verify)" },
+    "R03": { "severity": "deny",  "description": "Hard reset to remote branch" },
+    "R04": { "severity": "deny",  "description": "Direct push to protected branch (main/master)" },
+    "R05": { "severity": "warn",  "description": "Potential hardcoded API key or secret" },
+    "R06": { "severity": "deny",  "description": "Credential file read via cat" },
+    "R07": { "severity": "warn",  "description": "Delete git branch" },
+    "R08": { "severity": "deny",  "description": "Sudo usage" },
+    "R09": { "severity": "deny",  "description": "Destructive rm -rf" },
+    "R10": { "severity": "warn",  "description": "Force push with lease (informational)" },
+    "R11": { "severity": "warn",  "description": "Output may contain hardcoded secret" },
+    "R12": { "severity": "deny",  "description": "Private key material in output" },
+    "R13": { "severity": "warn",  "description": "Credential assignment added in diff" }
+  }
+}
