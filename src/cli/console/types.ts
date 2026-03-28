@@ -67,16 +67,77 @@ export interface WorkflowDetail {
 
 export interface ApprovalSummary {
   id: string;
+  type: string;
+  status: string;
+  title: string;
+  description: string;
+  requestedBy?: string | null;
+  requestedAt?: string | null;
+  reviewedAt?: string | null;
+  workflowId?: string | null;
+  workflowStatus?: string | null;
   issueTitle?: string | null;
   stepKey?: string | null;
-  createdAt?: string;
+  agentSlug?: string | null;
+  reason?: string | null;
+  summary?: string | null;
+}
+
+export interface ApprovalActionDescriptor {
+  key: string;
+  label: string;
+  description: string;
+}
+
+export interface ApprovalContextLine {
+  label: string;
+  value: string;
+}
+
+export interface ApprovalWorkflowContext {
+  id: string;
+  status: string;
+  currentStepKey?: string | null;
+  entryAgentSlug?: string | null;
+  sprintNumber?: number | null;
+  stepAgentSlug?: string | null;
+  stepStatus?: string | null;
+  issue?: { id: string; title: string; type?: string | null; status?: string | null } | null;
+}
+
+export interface ApprovalDetail {
+  id: string;
+  type: string;
+  status: string;
+  title: string;
+  description: string;
+  summary?: string | null;
+  requestedBy?: string | null;
+  requestedAt?: string | null;
+  reviewedAt?: string | null;
+  reason?: string | null;
+  note?: string | null;
+  stepKey?: string | null;
+  agentSlug?: string | null;
+  criterion?: string | null;
+  decisionHint?: string | null;
+  actionMode: "approval-route" | "harness-decision" | "none";
+  availableActions: ApprovalActionDescriptor[];
+  workflow?: ApprovalWorkflowContext | null;
+  contextLines: ApprovalContextLine[];
 }
 
 export interface LogLine {
   ts: string;
   text: string;
   repeat: number;
+  level: "info" | "warn" | "error";
+  category: string;
+  lowSignal: boolean;
+  sourceType: string;
 }
+
+export type LogSeverityMode = "all" | "warn-error";
 
 export interface ConsoleState {
   nav: NavState;
@@ -89,12 +150,21 @@ export interface ConsoleState {
   logs: LogLine[];
   logsConnected: boolean;
   heartbeatFilterEnabled: boolean;
+  logSeverityMode: LogSeverityMode;
+  logsPaused: boolean;
+  lastLogEventAt: Date | null;
   lastUpdatedAt: Date | null;
   lastRefreshError: string | null;
   shutdownRequested: boolean;
   workflowDetail: WorkflowDetail | null;
   workflowDetailLoading: boolean;
   workflowDetailError: string | null;
+  approvalDetail: ApprovalDetail | null;
+  approvalDetailLoading: boolean;
+  approvalDetailError: string | null;
+  approvalActionLoading: boolean;
+  flashMessage: string | null;
+  flashTone: "success" | "error" | "info" | null;
   detailScrollOffset: number;
 }
 

@@ -1,7 +1,7 @@
 import type { ConsoleState, LayoutRegions, WorkflowStep } from "../types.js";
 import {
   BOLD, CYAN, DIM, GREEN, RED, YELLOW, R,
-  colorStatus, clip, hr, shortId, formatRelativeTime,
+  colorStatus, clip, hr, shortId, formatRelativeTime, sectionDivider, sectionHeader,
 } from "../layout.js";
 
 // ── Step timeline column widths ────────────────────────────────────────────────
@@ -88,8 +88,7 @@ export function renderWorkflowDetail(state: ConsoleState, layout: LayoutRegions)
   const createdAt   = detail?.createdAt   ?? summaryWf?.createdAt  ?? null;
 
   // ── Header ────────────────────────────────────────────────────────────────
-  all.push(` ${BOLD}WORKFLOW INSPECTOR${R}`);
-  all.push(`${DIM}${hr(layout.width)}${R}`);
+  all.push(...sectionHeader("WORKFLOW INSPECTOR", layout.width));
 
   const lw = 11; // label column width
   all.push(`  ${DIM}${"id".padEnd(lw)}${R}${shortId(id)}`);
@@ -124,7 +123,7 @@ export function renderWorkflowDetail(state: ConsoleState, layout: LayoutRegions)
 
   // ── Steps ─────────────────────────────────────────────────────────────────
   all.push("");
-  all.push(`${DIM}${hr(layout.width)}${R}`);
+  all.push(sectionDivider("STEP TIMELINE", layout.width));
 
   if (state.workflowDetailLoading && !detail) {
     // Show loading only when no data at all yet

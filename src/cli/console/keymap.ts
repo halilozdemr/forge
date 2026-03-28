@@ -26,25 +26,32 @@ export function renderKeymap(nav: NavState, newTaskFocus?: NewTaskFocusField): s
     if (nav.detail === "workflow-detail") {
       parts.push(key("↑↓", "scroll"));
       parts.push(key("r", "refresh"));
+    } else if (nav.detail === "approval-detail") {
+      parts.push(key("↑↓", "scroll"));
+      parts.push(key("a", "approve"));
+      parts.push(key("r", "reject"));
     }
   } else {
     parts.push(key("o", "overview"));
     parts.push(key("w", "workflows"));
     parts.push(key("a", "approvals"));
     parts.push(key("l", "logs"));
-    parts.push(key("n", "new task"));
+    parts.push(key("n", "new"));
   }
 
   if (isListView) {
     parts.push(key("↑↓", "select"));
-    parts.push(key("enter", "inspect"));
+    parts.push(key("enter", "open"));
     if (nav.topLevel === "workflows") {
       parts.push(key("g", "jump active"));
     }
   }
 
   if (isLogs) {
-    parts.push(key("h", "hb filter"));
+    parts.push(key("h", "noise"));
+    parts.push(key("e", "warn/error"));
+    parts.push(key("p", "pause"));
+    parts.push(key("c", "clear"));
   }
 
   parts.push(key("r", "refresh"));
@@ -59,8 +66,8 @@ function renderNewTaskKeymap(focus: NewTaskFocusField): string {
   switch (focus) {
     case "title":
       parts.push(`${DIM}[chars]${R} type`);
-      parts.push(`${DIM}[backspace]${R} delete`);
-      parts.push(`${DIM}[enter]${R} next field`);
+      parts.push(`${DIM}[backspace]${R} del`);
+      parts.push(`${DIM}[enter]${R} next`);
       parts.push(`${DIM}[ctrl+enter]${R} submit`);
       break;
     case "type":

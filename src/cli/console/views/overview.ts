@@ -2,13 +2,17 @@ import type { ConsoleState, LayoutRegions } from "../types.js";
 import {
   BOLD, DIM, R,
   colorStatus, padEnd, clip, shortId, formatDuration,
+  sectionHeader, hr,
 } from "../layout.js";
 
 export function renderOverview(state: ConsoleState, layout: LayoutRegions): string[] {
   const lines: string[] = [];
 
   // ── Runtime stats ────────────────────────────────────────────────────────────
-  lines.push(` ${BOLD}RUNTIME${R}`);
+  lines.push(...sectionHeader("OVERVIEW", layout.width));
+  lines.push(` ${DIM}runtime status, queue health, and recent workflow activity${R}`);
+  lines.push("");
+  lines.push(...sectionHeader("RUNTIME", layout.width));
   if (!state.status) {
     lines.push(`  ${DIM}loading…${R}`);
   } else {
@@ -24,7 +28,7 @@ export function renderOverview(state: ConsoleState, layout: LayoutRegions): stri
   lines.push("");
 
   // ── Recent workflows ─────────────────────────────────────────────────────────
-  lines.push(` ${BOLD}RECENT WORKFLOWS${R}  ${DIM}[w] view all${R}`);
+  lines.push(...sectionHeader("RECENT WORKFLOWS", layout.width, `${DIM}[w] open workflows${R}`));
 
   if (state.workflows.length === 0) {
     lines.push(`  ${DIM}no workflow runs yet${R}`);
@@ -40,7 +44,7 @@ export function renderOverview(state: ConsoleState, layout: LayoutRegions): stri
     lines.push(
       `  ${DIM}${"STATUS".padEnd(statusW)}${"TYPE".padEnd(typeW)}${"PROG".padEnd(progW)}${"STEP".padEnd(stepW)}TITLE${R}`,
     );
-    lines.push(`  ${DIM}${"-".repeat(Math.min(w, statusW + typeW + progW + stepW + titleW))}${R}`);
+    lines.push(`  ${DIM}${hr(Math.min(w, statusW + typeW + progW + stepW + titleW))}${R}`);
 
     const maxRows = Math.max(1, layout.contentHeight - lines.length - 1);
     for (const wf of state.workflows.slice(0, maxRows)) {

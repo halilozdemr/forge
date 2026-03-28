@@ -41,15 +41,16 @@ export function padEnd(text: string, width: number): string {
 
 /** Clip to a visible width.  ANSI codes are stripped when clipping is needed. */
 export function clip(text: string | null | undefined, max: number): string {
+  if (max <= 0) return "";
   const visible = (text ?? "").replace(/\x1b\[[0-9;]*m/g, "");
   if (visible.length <= max) return text ?? "";
-  if (max <= 1) return visible.slice(0, max);
+  if (max === 1) return visible.slice(0, max);
   return visible.slice(0, max - 1) + "…";
 }
 
 /** Horizontal rule of a given width. */
 export function hr(width: number, char = "─"): string {
-  return char.repeat(width);
+  return char.repeat(Math.max(0, width));
 }
 
 export function shortId(id: string): string {
@@ -88,6 +89,24 @@ export function colorStatus(status: string): string {
   if (n === "failed" || n === "cancelled") return `${RED}${status}${R}`;
   if (n === "approval_pending" || n === "pending") return `${CYAN}${status}${R}`;
   return `${DIM}${status}${R}`;
+}
+
+export function sectionHeader(title: string, width: number, meta?: string): string[] {
+  const titleText = ` ${BOLD}${title}${R}`;
+  const metaSpace = Math.max(0, width - visibleLength(titleText) - 2);
+  const metaText = meta && metaSpace > 0 ? `  ${clip(meta, metaSpace)}` : "";
+  return [
+    `${titleText}${metaText}`,
+    `${DIM}${hr(width)}${R}`,
+  ];
+}
+
+export function sectionDivider(title: string, width: number): string {
+  const plain = ` ${title} `;
+  if (width <= plain.length) return `${DIM}${hr(width)}${R}`;
+  const left = Math.floor((width - plain.length) / 2);
+  const right = width - plain.length - left;
+  return `${DIM}${hr(left)}${R}${title}${DIM}${hr(right)}${R}`;
 }
 
 // ── Split-pane helpers ─────────────────────────────────────────────────────────

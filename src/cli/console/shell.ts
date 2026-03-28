@@ -4,10 +4,12 @@ import type {
   ConsoleState,
   ForgeConsoleShellOptions,
   LayoutRegions,
+  ApprovalDetail,
   ApprovalSummary,
   WorkflowSummary,
   WorkflowDetail,
   NewTaskFocusField,
+  LogLine,
 } from "./types.js";
 import {
   getLayout,
@@ -23,6 +25,7 @@ import { renderWorkflows, sortWorkflows } from "./views/workflows.js";
 import { renderApprovals } from "./views/approvals.js";
 import { renderLogs } from "./views/logs.js";
 import { renderWorkflowDetail } from "./views/workflow-detail.js";
+import { renderApprovalDetail } from "./views/approval-detail.js";
 import { renderNewTask } from "./views/new-task.js";
 
 // ── Internal HTTP / WS types ──────────────────────────────────────────────────
@@ -38,28 +41,78 @@ interface WsClient {
   on: (event: string, listener: (...args: unknown[]) => void) => void;
 }
 
+type LogDescriptor = Omit<LogLine, "ts" | "repeat">;
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function isLowSignalLog(text: string): boolean {
-  return text.toLowerCase().includes("heartbeat tick");
+function isLowSignalHeartbeat(line: string): boolean {
+  const text = line.toLowerCase();
+  return (
+    text.includes("heartbeat tick")
+    || text.includes("nothing to do")
+    || text.includes("idle heartbeat")
+    || text.includes("polling")
+  );
 }
 
-function formatEventLine(event: ForgeEvent): string {
+function describeEvent(event: ForgeEvent): LogDescriptor {
   switch (event.type) {
     case "heartbeat.log":
-      return `@${event.agentSlug} ${event.line}`;
+      return {
+        text: `@${event.agentSlug} ${event.line}`,
+        level: /error|failed|exception/i.test(event.line) ? "error" : /warn|retry|blocked/i.test(event.line) ? "warn" : "info",
+        category: "HEARTBT",
+        lowSignal: isLowSignalHeartbeat(event.line),
+        sourceType: event.type,
+      };
     case "issue.updated":
-      return `issue ${shortId(event.issueId)} → ${event.status}`;
+      return {
+        text: `issue ${shortId(event.issueId)} -> ${event.status}`,
+        level: /failed|blocked|cancelled/i.test(event.status) ? "warn" : "info",
+        category: "ISSUE",
+        lowSignal: false,
+        sourceType: event.type,
+      };
     case "queue.job.started":
-      return `queue started ${shortId(event.jobId)} @${event.agentSlug}`;
+      return {
+        text: `started ${shortId(event.jobId)} @${event.agentSlug}`,
+        level: "info",
+        category: "QUEUE",
+        lowSignal: false,
+        sourceType: event.type,
+      };
     case "queue.job.completed":
-      return `queue completed ${shortId(event.jobId)} ${event.success ? "ok" : "FAILED"}`;
+      return {
+        text: `completed ${shortId(event.jobId)} ${event.success ? "ok" : "FAILED"}`,
+        level: event.success ? "info" : "error",
+        category: "QUEUE",
+        lowSignal: false,
+        sourceType: event.type,
+      };
     case "agent.status.changed":
-      return `agent ${event.agentSlug} → ${event.status}`;
+      return {
+        text: `${event.agentSlug} -> ${event.status}`,
+        level: /paused|terminated|failed/i.test(event.status) ? "warn" : "info",
+        category: "AGENT",
+        lowSignal: false,
+        sourceType: event.type,
+      };
     case "budget.threshold":
-      return `budget threshold ${event.scope} ${event.percent}%`;
+      return {
+        text: `${event.scope} threshold ${event.percent}%`,
+        level: event.percent >= 100 ? "error" : "warn",
+        category: "BUDGET",
+        lowSignal: false,
+        sourceType: event.type,
+      };
     default:
-      return "event received";
+      return {
+        text: "event received",
+        level: "info",
+        category: "EVENT",
+        lowSignal: false,
+        sourceType: "unknown",
+      };
   }
 }
 
@@ -73,13 +126,20 @@ function parseEvent(raw: Buffer | string): ForgeEvent | null {
   }
 }
 
-function appendLog(state: ConsoleState, text: string): void {
+function appendLog(state: ConsoleState, entry: LogDescriptor): void {
   const last = state.logs[state.logs.length - 1];
-  if (last && last.text === text) {
+  if (
+    last
+    && last.text === entry.text
+    && last.level === entry.level
+    && last.category === entry.category
+    && last.lowSignal === entry.lowSignal
+    && last.sourceType === entry.sourceType
+  ) {
     last.repeat += 1;
     return;
   }
-  state.logs.push({ ts: nowTime(), text, repeat: 1 });
+  state.logs.push({ ts: nowTime(), repeat: 1, ...entry });
   if (state.logs.length > 300) state.logs.shift();
 }
 
@@ -114,6 +174,19 @@ interface IntakeResult {
 function clampIndex(index: number, length: number): number {
   if (length === 0) return 0;
   return Math.max(0, Math.min(index, length - 1));
+}
+
+function resetWorkflowDetail(state: ConsoleState): void {
+  state.workflowDetail = null;
+  state.workflowDetailLoading = false;
+  state.workflowDetailError = null;
+}
+
+function resetApprovalDetail(state: ConsoleState): void {
+  state.approvalDetail = null;
+  state.approvalDetailLoading = false;
+  state.approvalDetailError = null;
+  state.approvalActionLoading = false;
 }
 
 // ── Shell frame renderers ─────────────────────────────────────────────────────
@@ -160,6 +233,14 @@ function renderStatus(state: ConsoleState): string {
     line += `  ${YELLOW}⚠ ${msg}${R}`;
   }
 
+  if (state.flashMessage) {
+    const color =
+      state.flashTone === "success" ? GREEN :
+      state.flashTone === "error" ? YELLOW :
+      DIM;
+    line += `  ${color}${state.flashMessage}${R}`;
+  }
+
   return line;
 }
 
@@ -189,12 +270,21 @@ export async function startForgeConsoleShell(opts: ForgeConsoleShellOptions): Pr
     logs: [],
     logsConnected: false,
     heartbeatFilterEnabled: true,
+    logSeverityMode: "all",
+    logsPaused: false,
+    lastLogEventAt: null,
     lastUpdatedAt: null,
     lastRefreshError: null,
     shutdownRequested: false,
     workflowDetail: null,
     workflowDetailLoading: false,
     workflowDetailError: null,
+    approvalDetail: null,
+    approvalDetailLoading: false,
+    approvalDetailError: null,
+    approvalActionLoading: false,
+    flashMessage: null,
+    flashTone: null,
     detailScrollOffset: 0,
   };
 
@@ -210,6 +300,7 @@ export async function startForgeConsoleShell(opts: ForgeConsoleShellOptions): Pr
   let refreshTimer: NodeJS.Timeout | null = null;
   let reconnectTimer: NodeJS.Timeout | null = null;
   let logRenderTimer: NodeJS.Timeout | null = null;
+  let lastFrame = "";
 
   // ── Render ──────────────────────────────────────────────────────────────────
 
@@ -231,15 +322,7 @@ export async function startForgeConsoleShell(opts: ForgeConsoleShellOptions): Pr
       } else if (state.nav.detail === "workflow-detail") {
         contentLines = renderWorkflowDetail(state, layout);
       } else if (state.nav.detail === "approval-detail") {
-        // Phase 5.5 — reuse workflow-detail placeholder for now
-        contentLines = [
-          "",
-          `  ${BOLD}APPROVAL INSPECTOR${R}`,
-          "",
-          `  ${YELLOW}Phase 5.5${R}  ${DIM}Approval review UI coming soon.${R}`,
-          "",
-          `  ${DIM}[esc] back to approvals${R}`,
-        ];
+        contentLines = renderApprovalDetail(state, layout);
       } else {
         switch (state.nav.topLevel) {
           case "overview":
@@ -281,9 +364,10 @@ export async function startForgeConsoleShell(opts: ForgeConsoleShellOptions): Pr
     // \x1b[H   = move cursor to 1,1 without blanking the screen
     // \x1b[K   = erase from cursor to end of line (clears stale chars on shorter lines)
     // \x1b[J   = erase from cursor to end of screen (clears stale rows on shorter frames)
-    process.stdout.write(
-      "\x1b[H" + lines.map((l) => l + "\x1b[K").join("\n") + "\n\x1b[J",
-    );
+    const frame = "\x1b[H" + lines.map((l) => l + "\x1b[K").join("\n") + "\n\x1b[J";
+    if (frame === lastFrame) return;
+    lastFrame = frame;
+    process.stdout.write(frame);
   };
 
   // ── Data refresh ────────────────────────────────────────────────────────────
@@ -291,6 +375,14 @@ export async function startForgeConsoleShell(opts: ForgeConsoleShellOptions): Pr
   const refresh = async () => {
     if (disposed || refreshInFlight) return;
     refreshInFlight = true;
+    const selectedWorkflowId =
+      state.nav.topLevel === "workflows"
+        ? state.workflows[state.nav.selectedIndex]?.id ?? null
+        : null;
+    const selectedApprovalId =
+      state.nav.topLevel === "approvals"
+        ? state.approvals[state.nav.selectedIndex]?.id ?? null
+        : null;
     try {
       // Resolve companyId on first run
       if (!state.companyId) {
@@ -310,23 +402,32 @@ export async function startForgeConsoleShell(opts: ForgeConsoleShellOptions): Pr
         `${baseUrl}/v1/workflows?limit=50${cq ? `&${cq}` : ""}`,
       );
       state.workflows = sortWorkflows(wfRes.workflows ?? []);
-      // Keep selectedIndex in bounds when data changes
-      state.nav.selectedIndex = clampIndex(state.nav.selectedIndex, state.workflows.length);
+      if (state.nav.topLevel === "workflows" && selectedWorkflowId) {
+        const idx = state.workflows.findIndex((wf) => wf.id === selectedWorkflowId);
+        state.nav.selectedIndex = idx >= 0 ? idx : clampIndex(state.nav.selectedIndex, state.workflows.length);
+      } else if (state.nav.topLevel === "workflows") {
+        state.nav.selectedIndex = clampIndex(state.nav.selectedIndex, state.workflows.length);
+      }
 
       // Approvals
       if (state.companyId) {
         const apRes = await fetchJson<{ approvals: ApprovalSummary[] }>(
-          `${baseUrl}/v1/approvals?status=pending&${cq}`,
+          `${baseUrl}/v1/approvals/inbox?status=pending&${cq}`,
         );
         state.approvals = apRes.approvals ?? [];
         state.pendingApprovals = state.approvals.length;
-        state.nav.selectedIndex = clampIndex(
-          state.nav.selectedIndex,
-          state.nav.topLevel === "approvals" ? state.approvals.length : state.workflows.length,
-        );
+        if (state.nav.topLevel === "approvals" && selectedApprovalId) {
+          const idx = state.approvals.findIndex((approval) => approval.id === selectedApprovalId);
+          state.nav.selectedIndex = idx >= 0 ? idx : clampIndex(state.nav.selectedIndex, state.approvals.length);
+        } else if (state.nav.topLevel === "approvals") {
+          state.nav.selectedIndex = clampIndex(state.nav.selectedIndex, state.approvals.length);
+        }
       } else {
         state.approvals = [];
         state.pendingApprovals = 0;
+        if (state.nav.topLevel === "approvals") {
+          state.nav.selectedIndex = 0;
+        }
       }
 
       state.lastUpdatedAt = new Date();
@@ -366,6 +467,93 @@ export async function startForgeConsoleShell(opts: ForgeConsoleShellOptions): Pr
     }
   };
 
+  const fetchApprovalDetail = async (id: string) => {
+    try {
+      const data = await fetchJson<{ approval: ApprovalDetail }>(
+        `${baseUrl}/v1/approvals/${id}`,
+      );
+      if (state.nav.detailId === id && state.nav.detail === "approval-detail") {
+        state.approvalDetail = data.approval;
+        state.approvalDetailLoading = false;
+        state.approvalDetailError = null;
+        render();
+      }
+    } catch (err) {
+      if (state.nav.detailId === id && state.nav.detail === "approval-detail") {
+        state.approvalDetailLoading = false;
+        state.approvalDetailError = err instanceof Error ? err.message : String(err);
+        render();
+      }
+    }
+  };
+
+  const applyApprovalDecision = async (decision: "approve" | "reject") => {
+    const id = state.nav.detailId;
+    const detail = state.approvalDetail;
+
+    if (!id || state.nav.detail !== "approval-detail" || state.approvalActionLoading) return;
+    if (!detail || detail.id !== id) {
+      state.flashMessage = "Approval context is still loading.";
+      state.flashTone = "info";
+      render();
+      return;
+    }
+
+    const selectedIndex = state.nav.selectedIndex;
+    state.approvalActionLoading = true;
+    state.flashMessage = null;
+    state.flashTone = null;
+    render();
+
+    try {
+      if (detail.actionMode === "harness-decision") {
+        const workflowId = detail.workflow?.id;
+        const sprintNumber = detail.workflow?.sprintNumber;
+        if (!workflowId || sprintNumber == null) {
+          throw new Error("Approval detail is missing workflow sprint context.");
+        }
+        await postJson(
+          `${baseUrl}/v1/pipelines/${workflowId}/sprints/${sprintNumber}/decide`,
+          {
+            action: decision === "approve" ? "approve_continue" : "reject_and_retry",
+            actorId: "console",
+          },
+        );
+      } else if (detail.actionMode === "approval-route") {
+        if (decision === "approve") {
+          await postJson(`${baseUrl}/v1/approvals/${id}/approve`, {});
+        } else {
+          await postJson(`${baseUrl}/v1/approvals/${id}/reject`, {});
+        }
+      } else {
+        throw new Error("This approval does not support actions from the console yet.");
+      }
+
+      appendLog(state, {
+        text: `approval ${shortId(id)} ${decision}d`,
+        level: "info",
+        category: "ACTION",
+        lowSignal: false,
+        sourceType: "approval.action",
+      });
+      state.flashMessage = `${decision === "approve" ? "Approved" : "Rejected"} ${shortId(id)}`;
+      state.flashTone = "success";
+      state.nav.detail = null;
+      state.nav.detailId = null;
+      resetApprovalDetail(state);
+      resetWorkflowDetail(state);
+      state.detailScrollOffset = 0;
+      await refresh();
+      state.nav.selectedIndex = clampIndex(selectedIndex, state.approvals.length);
+      render();
+    } catch (err) {
+      state.approvalActionLoading = false;
+      state.flashMessage = err instanceof Error ? err.message : String(err);
+      state.flashTone = "error";
+      render();
+    }
+  };
+
   // ── WebSocket log stream ─────────────────────────────────────────────────────
 
   const connectLogs = async () => {
@@ -377,11 +565,25 @@ export async function startForgeConsoleShell(opts: ForgeConsoleShellOptions): Pr
 
       ws.on("open", () => {
         state.logsConnected = true;
+        appendLog(state, {
+          text: "websocket connected",
+          level: "info",
+          category: "STREAM",
+          lowSignal: false,
+          sourceType: "stream.open",
+        });
         render();
       });
 
       ws.on("close", () => {
         state.logsConnected = false;
+        appendLog(state, {
+          text: "websocket disconnected",
+          level: "warn",
+          category: "STREAM",
+          lowSignal: false,
+          sourceType: "stream.close",
+        });
         render();
         if (!disposed && !reconnectTimer) {
           reconnectTimer = setTimeout(() => {
@@ -393,6 +595,13 @@ export async function startForgeConsoleShell(opts: ForgeConsoleShellOptions): Pr
 
       ws.on("error", () => {
         state.logsConnected = false;
+        appendLog(state, {
+          text: "websocket error",
+          level: "warn",
+          category: "STREAM",
+          lowSignal: false,
+          sourceType: "stream.error",
+        });
         render();
       });
 
@@ -400,24 +609,29 @@ export async function startForgeConsoleShell(opts: ForgeConsoleShellOptions): Pr
         const raw = args[0] as Buffer | string;
         const event = parseEvent(raw);
         if (!event) return;
-        const text = formatEventLine(event);
-        if (state.heartbeatFilterEnabled && isLowSignalLog(text)) return;
-        appendLog(state, text);
+        state.lastLogEventAt = new Date();
+        appendLog(state, describeEvent(event));
         // Only repaint on log events when the logs view is active.
         // Debounce to ~80 ms so rapid bursts produce a single repaint instead
         // of a full-screen clear on every individual event.
-        if (state.nav.topLevel === "logs" && !state.nav.detail) {
+        if (state.nav.topLevel === "logs" && !state.nav.detail && !state.logsPaused) {
           if (logRenderTimer) clearTimeout(logRenderTimer);
           logRenderTimer = setTimeout(() => {
             logRenderTimer = null;
-            if (!disposed && state.nav.topLevel === "logs" && !state.nav.detail) render();
+            if (!disposed && state.nav.topLevel === "logs" && !state.nav.detail && !state.logsPaused) render();
           }, 80);
         }
       });
     } catch (error) {
       appendLog(
         state,
-        `Log stream unavailable: ${error instanceof Error ? error.message : String(error)}`,
+        {
+          text: `Log stream unavailable: ${error instanceof Error ? error.message : String(error)}`,
+          level: "warn",
+          category: "STREAM",
+          lowSignal: false,
+          sourceType: "stream.error",
+        },
       );
       render();
     }
@@ -604,9 +818,8 @@ export async function startForgeConsoleShell(opts: ForgeConsoleShellOptions): Pr
         if (state.nav.detail === "new-task" && state.newTaskForm.submitting) return;
         state.nav.detail = null;
         state.nav.detailId = null;
-        state.workflowDetail = null;
-        state.workflowDetailLoading = false;
-        state.workflowDetailError = null;
+        resetWorkflowDetail(state);
+        resetApprovalDetail(state);
         state.detailScrollOffset = 0;
         render();
       }
@@ -623,19 +836,29 @@ export async function startForgeConsoleShell(opts: ForgeConsoleShellOptions): Pr
     if (state.nav.detail) {
       switch (key.name) {
         case "up":
-          if (state.nav.detail === "workflow-detail" && state.detailScrollOffset > 0) {
+          if (
+            (state.nav.detail === "workflow-detail" || state.nav.detail === "approval-detail")
+            && state.detailScrollOffset > 0
+          ) {
             state.detailScrollOffset--;
             render();
           }
           break;
         case "down":
-          if (state.nav.detail === "workflow-detail") {
+          if (state.nav.detail === "workflow-detail" || state.nav.detail === "approval-detail") {
             state.detailScrollOffset++;
             render(); // view clamps offset on render
           }
           break;
+        case "a":
+          if (state.nav.detail === "approval-detail") {
+            void applyApprovalDecision("approve");
+          }
+          break;
         case "r":
-          if (state.nav.detail === "workflow-detail" && state.nav.detailId) {
+          if (state.nav.detail === "approval-detail") {
+            void applyApprovalDecision("reject");
+          } else if (state.nav.detail === "workflow-detail" && state.nav.detailId) {
             state.workflowDetailLoading = true;
             render();
             void fetchWorkflowDetail(state.nav.detailId);
@@ -710,6 +933,7 @@ export async function startForgeConsoleShell(opts: ForgeConsoleShellOptions): Pr
 
       // ── List navigation ─────────────────────────────────────────────────────
       case "up": {
+        if (state.nav.topLevel !== "workflows" && state.nav.topLevel !== "approvals") break;
         const listLen =
           state.nav.topLevel === "approvals" ? state.approvals.length : state.workflows.length;
         if (listLen > 0) {
@@ -719,6 +943,7 @@ export async function startForgeConsoleShell(opts: ForgeConsoleShellOptions): Pr
         break;
       }
       case "down": {
+        if (state.nav.topLevel !== "workflows" && state.nav.topLevel !== "approvals") break;
         const listLen =
           state.nav.topLevel === "approvals" ? state.approvals.length : state.workflows.length;
         if (listLen > 0) {
@@ -736,9 +961,9 @@ export async function startForgeConsoleShell(opts: ForgeConsoleShellOptions): Pr
           if (wf) {
             state.nav.detail = "workflow-detail";
             state.nav.detailId = wf.id;
-            state.workflowDetail = null;
+            resetWorkflowDetail(state);
+            resetApprovalDetail(state);
             state.workflowDetailLoading = true;
-            state.workflowDetailError = null;
             state.detailScrollOffset = 0;
             render(); // show header immediately from list cache
             void fetchWorkflowDetail(wf.id);
@@ -748,7 +973,14 @@ export async function startForgeConsoleShell(opts: ForgeConsoleShellOptions): Pr
           if (ap) {
             state.nav.detail = "approval-detail";
             state.nav.detailId = ap.id;
+            resetWorkflowDetail(state);
+            resetApprovalDetail(state);
+            state.approvalDetailLoading = true;
+            state.flashMessage = null;
+            state.flashTone = null;
+            state.detailScrollOffset = 0;
             render();
+            void fetchApprovalDetail(ap.id);
           }
         }
         break;
@@ -756,8 +988,31 @@ export async function startForgeConsoleShell(opts: ForgeConsoleShellOptions): Pr
 
       // ── Logs-specific ───────────────────────────────────────────────────────
       case "h":
-        state.heartbeatFilterEnabled = !state.heartbeatFilterEnabled;
-        render();
+        if (state.nav.topLevel === "logs") {
+          state.heartbeatFilterEnabled = !state.heartbeatFilterEnabled;
+          render();
+        }
+        break;
+      case "e":
+        if (state.nav.topLevel === "logs") {
+          state.logSeverityMode = state.logSeverityMode === "all" ? "warn-error" : "all";
+          render();
+        }
+        break;
+      case "p":
+        if (state.nav.topLevel === "logs") {
+          state.logsPaused = !state.logsPaused;
+          render();
+        }
+        break;
+      case "c":
+        if (state.nav.topLevel === "logs") {
+          state.logs = [];
+          state.lastLogEventAt = null;
+          state.flashMessage = "Logs cleared";
+          state.flashTone = "info";
+          render();
+        }
         break;
 
       // ── Global actions ──────────────────────────────────────────────────────
@@ -803,7 +1058,13 @@ export async function startForgeConsoleShell(opts: ForgeConsoleShellOptions): Pr
   }
 
   process.stdout.write("\x1b[?25l"); // hide cursor
-  appendLog(state, "Console log stream ready");
+  appendLog(state, {
+    text: "console log stream ready",
+    level: "info",
+    category: "SYSTEM",
+    lowSignal: false,
+    sourceType: "console.ready",
+  });
   await connectLogs();
   await refresh();
   refreshTimer = setInterval(() => void refresh(), 3000);

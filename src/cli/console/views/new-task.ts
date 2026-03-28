@@ -1,7 +1,7 @@
 import type { ConsoleState, LayoutRegions } from "../types.js";
 import {
   BOLD, DIM, GREEN, YELLOW, RED, CYAN, R,
-  hr, padEnd, clip,
+  padEnd, clip, sectionHeader,
 } from "../layout.js";
 
 /**
@@ -37,13 +37,16 @@ export function renderNewTask(state: ConsoleState, layout: LayoutRegions): strin
 
   function row(content: string, focused: boolean): string {
     const b = focused ? CYAN : DIM;
-    return `${lm}${b}│${R}${padEnd(content, innerW)}${b}│${R}`;
+    return `${lm}${b}│${R}${padEnd(clip(content, innerW), innerW)}${b}│${R}`;
   }
 
   // ── Header ─────────────────────────────────────────────────────────────────
+  for (const line of sectionHeader("NEW TASK", fieldW)) {
+    lines.push(`${lm}${line}`);
+  }
+  lines.push(`${lm}${DIM}${clip("[tab] next  [esc] back  [ctrl+enter] submit", fieldW)}${R}`);
+  lines.push(`${lm}${DIM}${clip("capture the work request, then choose execution mode", fieldW)}${R}`);
   lines.push("");
-  lines.push(`${lm}${BOLD}NEW TASK${R}  ${DIM}[tab] next field  [esc] cancel${R}`);
-  lines.push(`${lm}${DIM}${hr(fieldW)}${R}`);
 
   // ── Work type ──────────────────────────────────────────────────────────────
   const typeFocus = form.focusField === "type";

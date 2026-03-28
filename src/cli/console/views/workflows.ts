@@ -1,7 +1,7 @@
 import type { ConsoleState, LayoutRegions, WorkflowSummary } from "../types.js";
 import {
   BOLD, CYAN, DIM, RED, YELLOW, R,
-  colorStatus, padEnd, clip, shortId, hr, zipPanes, formatRelativeTime,
+  colorStatus, padEnd, clip, shortId, hr, zipPanes, formatRelativeTime, sectionHeader,
 } from "../layout.js";
 
 // ── Column widths ─────────────────────────────────────────────────────────────
@@ -97,7 +97,7 @@ function buildListLines(state: ConsoleState, listHeight: number, leftWidth: numb
   if (running > 0) headerRight += `  ${YELLOW}${running} running${R}`;
   if (blocked > 0) headerRight += `  ${RED}${blocked} blocked${R}`;
 
-  lines.push(` ${BOLD}WORKFLOWS${R}  ${headerRight}`);
+  lines.push(...sectionHeader("WORKFLOWS", leftWidth, headerRight));
 
   // Column header — same PREFIX (2 spaces) as data rows
   lines.push(
@@ -107,9 +107,6 @@ function buildListLines(state: ConsoleState, listHeight: number, leftWidth: numb
     `${"PROG".padEnd(PROG_W)}` +
     `TITLE${R}`,
   );
-
-  // Separator
-  lines.push(`${DIM}${hr(leftWidth)}${R}`);
 
   // ── Empty / loading state ─────────────────────────────────────────────────
   if (state.workflows.length === 0) {
@@ -150,8 +147,7 @@ function buildPreviewLines(state: ConsoleState, rightWidth: number): string[] {
   const lines: string[] = [];
   const wf = state.workflows[state.nav.selectedIndex] ?? null;
 
-  lines.push(` ${BOLD}PREVIEW${R}`);
-  lines.push(`${DIM}${hr(rightWidth)}${R}`);
+  lines.push(...sectionHeader("DETAIL", rightWidth));
 
   if (!wf) {
     lines.push(`  ${DIM}no workflow selected${R}`);
@@ -204,7 +200,7 @@ function buildPreviewLines(state: ConsoleState, rightWidth: number): string[] {
 // ── Entry point ───────────────────────────────────────────────────────────────
 
 export function renderWorkflows(state: ConsoleState, layout: LayoutRegions): string[] {
-  const leftWidth  = Math.floor(layout.width * 0.62);
+  const leftWidth  = Math.min(Math.max(Math.floor(layout.width * 0.62), 46), layout.width - 22);
   const rightWidth = layout.width - leftWidth - 1; // 1 for the │ separator
 
   const leftLines  = buildListLines(state, layout.contentHeight, leftWidth);
