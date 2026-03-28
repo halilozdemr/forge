@@ -75,7 +75,8 @@ export async function harnessRoutes(server: FastifyInstance) {
         message.includes("not found") ||
         message.includes("not in approval_pending") ||
         message.includes("exhausted build attempts") ||
-        message.includes("not a harness pipeline");
+        message.includes("not a harness pipeline") ||
+        message.includes("not a structured pipeline");
 
       return reply.code(isClientError ? 400 : 500).send({ error: message });
     }

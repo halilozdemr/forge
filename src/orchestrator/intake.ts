@@ -6,6 +6,9 @@ import { OFFICIAL_ENTRY_AGENT_SLUG } from "../agents/constants.js";
 
 const log = createChildLogger("intake-service");
 
+type RequestType = "feature" | "bug" | "refactor" | "release" | "harness" | "direct";
+type ExecutionMode = "fast" | "structured";
+
 function combineDescription(parts: Array<string | undefined | null>): string | undefined {
   const rendered = parts
     .map((part) => part?.trim())
@@ -13,14 +16,37 @@ function combineDescription(parts: Array<string | undefined | null>): string | u
   return rendered.length > 0 ? rendered.join("\n\n") : undefined;
 }
 
+function normalizeExecutionMode(executionMode?: ExecutionMode): ExecutionMode {
+  return executionMode === "structured" ? "structured" : "fast";
+}
+
+function shouldUseStructuredPipeline(type: RequestType, executionMode: ExecutionMode): boolean {
+  return executionMode === "structured" && type !== "direct" && type !== "harness";
+}
+
+function normalizeRequestType(type: string): RequestType {
+  switch (type) {
+    case "feature":
+    case "bug":
+    case "refactor":
+    case "release":
+    case "harness":
+    case "direct":
+      return type;
+    default:
+      return "feature";
+  }
+}
+
 export class IntakeService {
   constructor(private db: PrismaClient) {}
 
   async submitRequest(opts: {
     source: string;
-    type: "feature" | "bug" | "refactor" | "release" | "harness" | "direct";
+    type: RequestType;
     title: string;
     description?: string;
+    executionMode?: ExecutionMode;
     briefMarkdown?: string;
     requestedAgentSlug?: string;
     requestedBy: string;
@@ -61,6 +87,8 @@ export class IntakeService {
       }
     }
 
+    const executionMode = normalizeExecutionMode(opts.executionMode);
+
     const issueDescription = combineDescription([
       opts.description,
       opts.briefMarkdown,
@@ -73,6 +101,7 @@ export class IntakeService {
         title: opts.title,
         description: issueDescription,
         type: opts.type,
+        metadata: JSON.stringify({ executionMode }),
         status: "todo",
       },
     });
@@ -82,6 +111,7 @@ export class IntakeService {
       projectId: project.id,
       issueId: issue.id,
       type: opts.type,
+      executionMode,
       title: issue.title,
       description: issue.description ?? undefined,
       source: opts.source,
@@ -105,6 +135,7 @@ export class IntakeService {
     projectId: string;
     issueId: string;
     type: string;
+    executionMode?: ExecutionMode;
     title: string;
     description?: string;
     source: string;
@@ -112,9 +143,13 @@ export class IntakeService {
     requestedAgentSlug?: string;
     clientRequestKey?: string;
   }): Promise<DispatchResult> {
+    const requestType = normalizeRequestType(opts.type);
+    const executionMode = normalizeExecutionMode(opts.executionMode);
+
     const plan = this.buildPlan({
       issueId: opts.issueId,
-      type: opts.type,
+      type: requestType,
+      executionMode,
       title: opts.title,
       description: opts.description,
       requestedAgentSlug: opts.requestedAgentSlug,
@@ -130,7 +165,7 @@ export class IntakeService {
       projectId: opts.projectId,
       issueId: opts.issueId,
       source: opts.source,
-      requestType: opts.type,
+      requestType,
       requestedBy: opts.requestedBy,
       requestedAgentSlug: opts.requestedAgentSlug ?? null,
       entryAgentSlug: plan[0].agentSlug,
@@ -146,14 +181,20 @@ export class IntakeService {
         resource: `pipeline:${result.pipelineRunId}`,
         metadata: JSON.stringify({
           issueId: opts.issueId,
-          type: opts.type,
+          type: requestType,
+          executionMode,
           queuedStepKeys: result.queuedStepKeys,
         }),
       },
     });
 
     log.info(
-      { pipelineRunId: result.pipelineRunId, issueId: opts.issueId, type: opts.type },
+      {
+        pipelineRunId: result.pipelineRunId,
+        issueId: opts.issueId,
+        type: requestType,
+        executionMode,
+      },
       "Created pipeline run from intake",
     );
 
@@ -162,7 +203,8 @@ export class IntakeService {
 
   private buildPlan(opts: {
     issueId: string;
-    type: string;
+    type: RequestType;
+    executionMode: ExecutionMode;
     title: string;
     description?: string;
     requestedAgentSlug?: string;
@@ -197,7 +239,8 @@ export class IntakeService {
     }
 
     const orchestrator = new FirmOrchestrator();
-    return orchestrator.buildPipeline(opts.type, {
+    const pipelineType = shouldUseStructuredPipeline(opts.type, opts.executionMode) ? "harness" : opts.type;
+    return orchestrator.buildPipeline(pipelineType, {
       issueId: opts.issueId,
       title: opts.title,
       description: opts.description,

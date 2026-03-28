@@ -1,6 +1,6 @@
 # Forge
 
-A local-first AI agent orchestration platform. Spawn a team of AI agents, submit tasks via CLI or Web UI, and watch them execute a deterministic pipeline — `intake-gate` → `architect` → `builder` → `quality-guard` → `devops`.
+A local-first AI workflow runner. Bootstrap a project with `forge init`, start Forge locally, and launch work from the CLI.
 
 Forge runs entirely on your machine. It uses whatever AI CLI or API key you already have.
 
@@ -8,15 +8,17 @@ Forge runs entirely on your machine. It uses whatever AI CLI or API key you alre
 
 ## How it works
 
-```
-forge feature create --title "Add dark mode"
-    ↓
-  intake-gate  →  architect  →  builder  →  quality-guard  →  devops
-    ↓
-  forge workflow watch <run-id>
+```bash
+forge init
+forge start
+forge feature create "add dark mode" --mode structured
+forge workflow watch <run-id>
 ```
 
-Each request goes through a staged pipeline. Each stage runs as a separate agent job, writes results to SQLite, and passes a structured artifact to the next stage. You can watch progress in real time from the CLI or the Web UI.
+You start work with `forge feature create|run` and `forge bug create|run`.
+At creation time, choose execution mode:
+- **Fast** — simple tasks, quick iteration
+- **Structured** — planning, checkpoints, approvals for larger work
 
 ---
 
@@ -32,9 +34,9 @@ Each request goes through a staged pipeline. Each stage runs as a separate agent
 | **MCP server** | `forge-mcp` — exposes 23 tools so Claude Code can act as the Receptionist orchestrator. |
 | **SQLite / Prisma** | Single database file at `~/.forge/forge.db`. All state lives here. |
 
-### Pipeline stages
+### Workflow stages (internal)
 
-| Pipeline | Stages (in order) |
+| Workflow kind | Stages (in order) |
 |---|---|
 | **feature** | `intake-gate` → `architect` → `builder` → `quality-guard` → `devops` → `retrospective-analyst` |
 | **bug** | `intake-gate` → `architect` → `builder` → `quality-guard` → `devops` |
@@ -88,36 +90,15 @@ cd your-project
 forge init
 ```
 
-This walks you through:
-- Company and project name
-- Agent provider strategy (claude-cli, openrouter, gemini-cli, etc.)
-- API keys for paid providers
-- Optional custom agent definitions
+Init is bootstrap-only. It helps you:
+- detect local provider tools
+- add optional API keys
+- configure model defaults (Automatic or Manual heavy/light)
+- optionally enable Telegram notifications
+
+`forge init --yes` runs non-interactively with defaults.
 
 The resulting `.forge/config.json` is read by `forge start` on every launch. The file is gitignored by default.
-
-### Minimal `.forge/config.json`
-
-```json
-{
-  "company": { "name": "My Team", "slug": "my-team" },
-  "project": { "name": "my-app", "path": "/path/to/project", "stack": "typescript" },
-  "agentStrategy": "claude-cli"
-}
-```
-
-### With OpenRouter
-
-```json
-{
-  "company": { "name": "My Team", "slug": "my-team" },
-  "project": { "name": "my-app", "path": "/path/to/project", "stack": "typescript" },
-  "agentStrategy": "openrouter",
-  "providers": {
-    "openrouter": { "apiKey": "sk-or-..." }
-  }
-}
-```
 
 ---
 
@@ -170,30 +151,35 @@ forge doctor    # check all prerequisites and diagnose setup issues
 ### Submit a feature request
 
 ```bash
-forge feature create --title "Add CSV export to reports page"
-forge feature create --title "Add dark mode" --description "User-controlled theme toggle, persisted in localStorage"
+forge feature create "add CSV export to reports page"
+forge feature create "add dark mode" --description "User-controlled theme toggle, persisted in localStorage"
+forge feature create "add dark mode" --mode structured
+forge feature create "add dark mode" --mode fast
 ```
 
-Both `create` and `run` submit to the intake pipeline — they behave identically.
+Both `create` and `run` start work. If `--mode` is omitted in an interactive terminal, Forge asks you to choose Fast or Structured.
 
 Output:
 
 ```
-Feature submitted.
+Feature request created.
 
   Issue:   clxxx...
+  Mode:    Structured — planning, checkpoints, approvals for larger work
   Run ID:  clyyy...
   Status:  running
-  Steps:   intake-gate → architect → builder → quality-guard → devops → retrospective-analyst
+  Steps:   ...
 
   Watch:   forge workflow watch clyyy...
+  Inspect: forge workflow show clyyy...
 ```
 
 ### Submit a bug report
 
 ```bash
-forge bug create --title "Login form crashes on empty email submission"
-forge bug create --title "Race condition in queue worker" --description "Happens under high concurrency"
+forge bug create "login form crashes on empty email submission"
+forge bug create "race condition in queue worker" --description "Happens under high concurrency"
+forge bug create "fix crash on launch" --mode structured
 ```
 
 ### Watch a workflow run
@@ -219,7 +205,7 @@ Workflow COMPLETED.
 ```bash
 forge workflow list                         # all recent runs
 forge workflow list --status running        # only active runs
-forge workflow list --type bug              # filter by type
+forge workflow list --type bug              # filter by work kind
 forge workflow list --limit 50
 
 forge workflow show <run-id>                # full step timeline with durations and summaries
@@ -254,7 +240,7 @@ Open `http://localhost:3131` after `forge start`.
 | Page | URL | What you can do |
 |---|---|---|
 | Overview | `#/` | System health, queue summary, agent status |
-| Workflows | `#/workflows` | List all pipeline runs, click to open detail |
+| Workflows | `#/workflows` | List all workflow runs, click to open detail |
 | Workflow Detail | `#/workflows/:id` | Step timeline, cancel, retry failed steps, view per-step logs, view artifacts |
 | Approvals | `#/approvals` | Approve or reject pending approval requests |
 | Agents | `#/agents` | List and inspect agent configuration |

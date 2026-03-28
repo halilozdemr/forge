@@ -34,7 +34,7 @@ async function main() {
     process.exit(1);
   }
 
-  console.log(`Seeding ${ALL_BUILTIN_AGENT_SLUGS.length} official agents from ${officialAgentsDir}`);
+  console.log(`Seeding ${ALL_BUILTIN_AGENT_SLUGS.length} built-in agents from ${officialAgentsDir}`);
 
   for (const slug of ALL_BUILTIN_AGENT_SLUGS) {
     const promptFile = path.join(officialAgentsDir, `${slug}.md`);
@@ -69,7 +69,7 @@ async function main() {
         model,
         promptFile,
         permissions: permissionsStr,
-        clientConfig: JSON.stringify(buildDefaultClientConfigForSlug(slug, "official")),
+        clientConfig: JSON.stringify(buildDefaultClientConfigForSlug(slug)),
       },
       create: {
         companyId: company.id,
@@ -82,14 +82,14 @@ async function main() {
         status: "idle",
         permissions: permissionsStr,
         promptFile,
-        clientConfig: JSON.stringify(buildDefaultClientConfigForSlug(slug, "official")),
+        clientConfig: JSON.stringify(buildDefaultClientConfigForSlug(slug)),
       },
     });
 
     console.log(`Seeded ${slug} -> provider: ${modelProvider}, model: ${model}`);
   }
 
-  console.log("Official agent seeding complete.");
+  console.log("Built-in agent seeding complete.");
   await prisma.$disconnect();
 }
 

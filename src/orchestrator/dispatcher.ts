@@ -21,6 +21,18 @@ function parseDependsOn(value: string): string[] {
   }
 }
 
+function isStructuredPipelineRun(run: { requestType: string; planJson: string }): boolean {
+  // Backward compatibility: legacy structured runs used requestType="harness".
+  if (run.requestType === "harness") return true;
+
+  try {
+    const plan = JSON.parse(run.planJson || "[]") as Array<{ key?: string }>;
+    return Array.isArray(plan) && plan.some((step) => step.key === "planner");
+  } catch {
+    return false;
+  }
+}
+
 function summarizeResult(result: string, maxLength = 8000): string {
   if (result.length <= maxLength) return result;
   return `${result.slice(0, maxLength)}...`;
@@ -229,7 +241,7 @@ export class PipelineDispatcher {
     // Harness artifact extraction, validation, and persistence.
     // Runs before marking the step completed so a validation failure keeps the step
     // in a failed state rather than leaving it stuck as "completed".
-    if (stepRun.pipelineRun.requestType === "harness") {
+    if (isStructuredPipelineRun(stepRun.pipelineRun)) {
       const artifactType = getHarnessArtifactType(stepRun.stepKey);
       if (artifactType !== null) {
         if (!stepRun.pipelineRun.issueId) {
@@ -538,7 +550,7 @@ export class PipelineDispatcher {
     // resultSummary is never read or injected for harness steps.
     // Non-harness pipelines: V1 behaviour — inject prior step resultSummary sections.
     let enrichedInput: string;
-    if (pipelineRun.requestType === "harness") {
+    if (isStructuredPipelineRun(pipelineRun)) {
       enrichedInput = await assembleHarnessStepContext(this.db, {
         pipelineRunId: pipelineRun.id,
         stepKey: stepRun.stepKey,
@@ -643,8 +655,8 @@ export class PipelineDispatcher {
     if (!pipelineRun) {
       throw new Error(`Pipeline ${pipelineRunId} not found`);
     }
-    if (pipelineRun.requestType !== "harness") {
-      throw new Error(`Pipeline ${pipelineRunId} is not a harness pipeline (type: ${pipelineRun.requestType})`);
+    if (!isStructuredPipelineRun(pipelineRun)) {
+      throw new Error(`Pipeline ${pipelineRunId} is not a structured pipeline (type: ${pipelineRun.requestType})`);
     }
 
     const sprintRun = await this.db.sprintRun.findUnique({

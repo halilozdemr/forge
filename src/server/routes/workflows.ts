@@ -53,6 +53,7 @@ export async function workflowRoutes(server: FastifyInstance) {
         createdAt: run.createdAt,
         startedAt: run.startedAt,
         completedAt: run.completedAt,
+        updatedAt: run.updatedAt,
       };
     });
 

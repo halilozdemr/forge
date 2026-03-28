@@ -144,14 +144,19 @@ export type BuildResult = z.infer<typeof BuildResultSchema>;
 
 const CriterionStatusSchema = z.enum(["passed", "failed", "not_verifiable", "pending_human_review"]);
 
+const OptionalStringSchema = z.preprocess(
+  (value) => (value === null ? undefined : value),
+  z.string().min(1).optional(),
+);
+
 const CriterionResultSchema = z
   .object({
     id: z.string().min(1),
     status: CriterionStatusSchema,
     evidence: z.string().min(1),
     toolsUsed: z.array(z.string()).optional(),
-    failureReason: z.string().optional(),
-    observationNote: z.string().optional(),
+    failureReason: OptionalStringSchema,
+    observationNote: OptionalStringSchema,
   })
   .refine(
     (r) => {
@@ -173,6 +178,16 @@ const CriterionResultSchema = z
       message: 'failureReason is required when status = "failed"',
       path: ["failureReason"],
     }
+  )
+  .refine(
+    (r) => {
+      if (r.status === "pending_human_review") return r.observationNote !== undefined && r.observationNote.length > 0;
+      return true;
+    },
+    {
+      message: 'observationNote is required when status = "pending_human_review"',
+      path: ["observationNote"],
+    }
   );
 
 export type CriterionResult = z.infer<typeof CriterionResultSchema>;
@@ -185,8 +200,8 @@ export const EvaluationReportSchema = z
     criteria: z.array(CriterionResultSchema),
     machinePassed: z.boolean(),
     requiresHumanReview: z.boolean(),
-    blockers: z.array(z.string()),                // criterion ids of required machine criteria with status = "failed"
-    notVerifiableMachineRequired: z.array(z.string()), // required machine criteria with status = "not_verifiable"
+    blockers: z.array(z.string()).default([]),                // criterion ids of required machine criteria with status = "failed"
+    notVerifiableMachineRequired: z.array(z.string()).default([]), // required machine criteria with status = "not_verifiable"
     recommendations: z.string(),
   })
   .refine(

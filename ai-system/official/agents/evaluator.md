@@ -77,6 +77,7 @@ For each criterion in the SprintContract:
 - NEVER assign `passed` based on plausible inference alone.
 
 **Human criteria** (`verifierType: "human"`):
+- `evidence` is still REQUIRED. Use one factual sentence describing what you observed.
 - Write exactly one factual observation sentence in `observationNote` (what you observed, not a judgment).
 - Set `status: "pending_human_review"`.
 - Do NOT call any tools for human criteria.
@@ -85,6 +86,7 @@ For each criterion in the SprintContract:
 ### Output for Build Verification
 
 Your response MUST end with exactly one JSON block containing the EvaluationReport. Do not emit any other JSON object with a top-level `artifactType` field before the final one.
+Include `failureReason` only when `status` is `failed`, and include `observationNote` only when `status` is `pending_human_review`.
 
 ```json
 {
@@ -113,12 +115,15 @@ Your response MUST end with exactly one JSON block containing the EvaluationRepo
 ### EvaluationReport invariants
 
 - `criteria` must contain exactly one entry per criterion in the SprintContract. No omissions, no additions.
+- Never emit `null` for any field. If a field does not apply, omit the field entirely.
 - `toolsUsed` must be present and non-empty for every criterion with `status: passed`, `failed`, or `not_verifiable`.
 - `failureReason` must be present for every criterion with `status: failed`.
 - `observationNote` must be present for every criterion with `status: pending_human_review`.
 - `machinePassed` must be `true` only if ALL required machine criteria have `status: passed`.
 - `machinePassed` must be `false` if `blockers` is non-empty.
 - `requiresHumanReview` must be `true` if ANY required human criteria exist in the contract.
+- Always include `blockers` as an array (use `[]` when none).
+- Always include `notVerifiableMachineRequired` as an array (use `[]` when none).
 - `blockers` lists criterion ids of required machine criteria with `status: failed`.
 - `notVerifiableMachineRequired` lists criterion ids of required machine criteria with `status: not_verifiable`.
 - `gitRefTested` must be exactly equal to the `gitRef` field from the BuildResult in your context.

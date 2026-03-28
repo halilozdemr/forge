@@ -26,10 +26,11 @@ async function resolveProjectId() {
 export async function intakeRoutes(server: FastifyInstance) {
   server.post<{
     Body: {
-      source: "claude-code" | "opencode" | "api";
+      source: "claude-code" | "opencode" | "api" | "cli";
       type: "feature" | "bug" | "refactor" | "release" | "harness" | "direct";
       title: string;
       description?: string;
+      executionMode?: "fast" | "structured";
       briefMarkdown?: string;
       requestedAgentSlug?: string;
       requestedBy: string;

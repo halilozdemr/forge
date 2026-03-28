@@ -44,13 +44,23 @@ function progressBar(completed: number, total: number): string {
 }
 
 export function workflowCommand(): Command {
-  const cmd = new Command("workflow").description("Inspect and control workflow runs");
+  const cmd = new Command("workflow")
+    .description("Inspect workflow runs (list, show, watch)")
+    .addHelpText(
+      "after",
+      `
+Use this command group to inspect progress.
+To start new work, use:
+  forge feature create "add login screen" --mode structured
+  forge bug create "fix crash on launch" --mode fast
+`,
+    );
 
   cmd
     .command("list")
     .description("List workflow runs")
     .option("--status <status>", "Filter by status (pending|running|completed|failed|cancelled)")
-    .option("--type <type>", "Filter by type (feature|bug|refactor|release|direct)")
+    .option("--type <type>", "Filter by work kind (feature|bug|refactor|release|direct)")
     .option("--company <id>", "Company ID")
     .option("--project <id>", "Project ID")
     .option("--limit <n>", "Max results", "30")
@@ -95,7 +105,7 @@ export function workflowCommand(): Command {
 
         console.log("\n" + "─".repeat(70));
         console.log(`${BOLD}Workflow Run${RESET}  ${w.id}`);
-        console.log(`Type:      ${w.type}`);
+        console.log(`Kind:      ${w.type}`);
         console.log(`Status:    ${colorStatus(w.status)}`);
         console.log(`Progress:  ${progressBar(w.progress.completed, w.progress.total)}`);
         if (w.issue) console.log(`Issue:     ${w.issue.title} [${w.issue.type}]`);
