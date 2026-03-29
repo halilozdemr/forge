@@ -16,7 +16,6 @@ export function BudgetPage() {
         <h1 class="page-title">Budget</h1>
         <p class="page-subtitle">Cost tracking and spend policies</p>
       </div>
-      <button class="btn btn-primary" id="add-policy-btn">+ Add Policy</button>
     </div>
     <div class="overview-grid" id="budget-stats">
     </div>
@@ -92,7 +91,7 @@ export function BudgetPage() {
       const emptyRow = document.createElement('tr');
       const emptyCell = document.createElement('td');
       emptyCell.colSpan = 4;
-      emptyCell.appendChild(EmptyState({ icon: '⊡', title: 'No policies', description: 'Add a budget policy to control spend.' }));
+      emptyCell.appendChild(EmptyState({ icon: '⊡', title: 'No policies', description: 'No budget policies are configured.' }));
       emptyRow.appendChild(emptyCell);
       policiesTbody.appendChild(emptyRow);
       return;

@@ -5,8 +5,6 @@ const NAV_ITEMS = [
   { href: '#/workflows',   label: 'Workflows',  icon: iconWorkflows() },
   { href: '#/approvals',   label: 'Approvals',  icon: iconApprovals() },
   { href: '#/agents',      label: 'Agents',     icon: iconAgents() },
-  { href: '#/issues',      label: 'Issues',     icon: iconIssues() },
-  { href: '#/sprints',     label: 'Sprints',    icon: iconSprints() },
   { href: '#/queue',       label: 'Queue',      icon: iconQueue() },
   { href: '#/budget',      label: 'Budget',     icon: iconBudget() },
 ];
@@ -98,18 +96,6 @@ function iconGrid() {
 function iconAgents() {
   return `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" xmlns="http://www.w3.org/2000/svg">
     <circle cx="8" cy="5.5" r="2.5"/><path d="M2.5 14c0-3 2.5-5 5.5-5s5.5 2 5.5 5"/>
-  </svg>`;
-}
-
-function iconIssues() {
-  return `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" xmlns="http://www.w3.org/2000/svg">
-    <path d="M2 4h12M2 8h8M2 12h5" stroke-linecap="round"/>
-  </svg>`;
-}
-
-function iconSprints() {
-  return `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" xmlns="http://www.w3.org/2000/svg">
-    <circle cx="8" cy="8" r="6"/><path d="M8 4v4l2.5 2.5" stroke-linecap="round"/>
   </svg>`;
 }
 

@@ -10,8 +10,6 @@ interface PaletteItem {
 const ITEMS: PaletteItem[] = [
   { icon: '⊞', label: 'Overview',        group: 'Pages', action: () => router.navigate('#/') },
   { icon: '◉', label: 'Agents',          group: 'Pages', action: () => router.navigate('#/agents') },
-  { icon: '⊡', label: 'Issues',          group: 'Pages', action: () => router.navigate('#/issues') },
-  { icon: '◷', label: 'Sprints',         group: 'Pages', action: () => router.navigate('#/sprints') },
   { icon: '↗', label: 'Queue',           group: 'Pages', action: () => router.navigate('#/queue') },
   { icon: '$', label: 'Budget',          group: 'Pages', action: () => router.navigate('#/budget') },
 ];

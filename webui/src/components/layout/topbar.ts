@@ -3,8 +3,6 @@ import { healthStore, activeJobsCount } from '../../store/store';
 const ROUTE_LABELS: Record<string, string> = {
   '#/':        'Overview',
   '#/agents':  'Agents',
-  '#/issues':  'Issues',
-  '#/sprints': 'Sprints',
   '#/queue':   'Queue',
   '#/budget':  'Budget',
 };

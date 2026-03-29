@@ -1,5 +1,4 @@
-import { agentsStore, issuesStore, activeJobsCount, logsStore, appendLog } from '../store/store';
-import { fetchIssues } from './issues';
+import { agentsStore, activeJobsCount, logsStore, appendLog } from '../store/store';
 
 let socket: WebSocket | null = null;
 let reconnectTimer: NodeJS.Timeout | null = null;
@@ -54,10 +53,6 @@ function handleServerEvent(event: any) {
     case 'agent.status.changed':
       updateAgentStatus(event.agentSlug, event.status);
       break;
-    case 'issue.updated':
-      updateIssueStatus(event.issueId, event.status);
-      void fetchIssues();
-      break;
     case 'queue.job.started':
       activeJobsCount.set(activeJobsCount.value + 1);
       break;
@@ -79,14 +74,5 @@ function updateAgentStatus(slug: string, status: any) {
   if (index !== -1) {
     agents[index] = { ...agents[index], status };
     agentsStore.set(agents);
-  }
-}
-
-function updateIssueStatus(id: string, status: any) {
-  const issues = [...issuesStore.value];
-  const index = issues.findIndex(i => i.id === id);
-  if (index !== -1) {
-    issues[index] = { ...issues[index], status };
-    issuesStore.set(issues);
   }
 }

@@ -38,7 +38,3 @@ export async function fetchBudgetPolicies() {
     return [];
   }
 }
-
-export async function createBudgetPolicy(data: Partial<BudgetPolicy>) {
-  return client.post('/budget/policies', { ...data, companyId: getCachedCompanyId() });
-}

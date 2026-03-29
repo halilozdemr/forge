@@ -38,31 +38,6 @@ export interface Agent {
   cost?: number;
 }
 
-export interface Issue {
-  id: string;
-  title: string;
-  status: 'open' | 'todo' | 'in_progress' | 'review' | 'in_review' | 'done' | 'failed' | 'cancelled' | 'blocked';
-  type: 'feature' | 'bug' | 'refactor' | 'release' | 'chore' | string;
-  assignedAgentId?: string;
-  assignedAgent?: { slug: string; name: string } | null;
-  executionAgentSlug?: string | null;
-  pipeline?: {
-    id: string;
-    status: string;
-    entryAgentSlug: string;
-    currentStepKey: string | null;
-    activeStepKey: string | null;
-    activeAgentSlug: string | null;
-    activeStatus: string | null;
-    activeExcerpt?: string | null;
-    completedSteps: number;
-    totalSteps: number;
-    startedAt: string;
-    completedAt: string | null;
-    updatedAt: string;
-  } | null;
-}
-
 export interface HealthStatus {
   status: 'healthy' | 'degraded' | 'down';
   components: {
@@ -89,7 +64,6 @@ export function appendLog(store: Signal<LogEntry[]>, entry: LogEntry) {
 
 // Global Store
 export const agentsStore = new Signal<Agent[]>([]);
-export const issuesStore = new Signal<Issue[]>([]);
 export const healthStore = new Signal<HealthStatus | null>(null);
 export const activeJobsCount = new Signal<number>(0);
 export const logsStore = new Signal<LogEntry[]>([]);
