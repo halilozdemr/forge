@@ -7,8 +7,8 @@ You describe work — a feature, a bug fix, a refactor. Forge routes it through 
 ```bash
 forge init
 forge start
-forge feature create "add login screen" --mode structured
-forge bug create "fix crash on launch" --mode fast
+forge run "add login screen" --type feature
+forge run "fix crash on launch" --type bug --mode fast
 ```
 
 Forge runs the orchestration layer entirely on your machine. It uses whatever AI CLI or API key you already have — Claude Code, Gemini CLI, Codex, or a direct API key. When you use API-based providers (OpenRouter, Anthropic API, Gemini API), requests go to those services as normal.
@@ -51,8 +51,8 @@ Right for bug fixes, small features, anything you can describe in one sentence.
 **structured** — activates the harness execution framework. A planner agent first decomposes the work into a `ProductSpec`, then each sprint goes through a contract → review → build → evaluate cycle. Right for larger features where you want planning, checkpoints, and the ability to redirect mid-flight.
 
 ```bash
-forge bug create "fix null pointer in auth" --mode fast
-forge feature create "rebuild the onboarding flow" --mode structured
+forge run "fix null pointer in auth" --type bug --mode fast
+forge run "rebuild the onboarding flow" --type feature --mode structured
 ```
 
 > See [docs/harness.md](docs/harness.md) for a detailed explanation of the structured pipeline and how harness works internally.
@@ -76,9 +76,9 @@ forge init
 forge start
 
 # 4. Submit work (or press n in the console)
-forge feature create "add CSV export" --mode fast
-forge feature create "add multi-tenant support" --mode structured
-forge bug create "crash on empty email submission" --mode fast
+forge run "add CSV export" --type feature --mode fast
+forge run "add multi-tenant support" --type feature --mode structured
+forge run "crash on empty email submission" --type bug --mode fast
 ```
 
 `forge init --yes` skips interactive prompts. The generated `.forge/config.json` is gitignored by default.
@@ -139,11 +139,10 @@ forge status                        # queue, agents, heartbeat state
 forge doctor                        # check prerequisites
 
 # Work
-forge feature create "<title>"
-forge feature create "<title>" --mode fast|structured
-forge feature create "<title>" --description "<details>"
-forge bug create "<title>"
-forge bug create "<title>" --mode fast|structured
+forge run "<title>" --type feature|bug|refactor|release [--mode fast|structured]
+forge run "prepare v2.3 release candidate" --type release --mode structured
+forge feature create "<title>" [--mode fast|structured]    # compatibility alias
+forge bug create "<title>" [--mode fast|structured]        # compatibility alias
 
 # Workflows
 forge workflow list
@@ -163,8 +162,8 @@ forge logs --agent <slug>
 # Agents
 forge agent list
 forge agent inspect <slug>
-forge agent edit <slug> --model gpt-4o --provider openrouter
-forge agent edit <slug> --status paused
+forge agent edit <slug> --company <id> --model gpt-4o --provider openrouter
+forge agent edit <slug> --company <id> --status paused
 forge agent hire [slug]
 forge agent fire <slug>
 
@@ -180,7 +179,7 @@ forge budget report
 
 **Ship a larger feature:**
 ```bash
-forge feature create "add multi-tenant workspace support" --mode structured
+forge run "add multi-tenant workspace support" --type feature --mode structured
 # planner decomposes into ProductSpec
 # sprint-1-contract proposed → evaluator reviews → APPROVED/REJECTED
 # builder implements → evaluator verifies → sprint 2 injected dynamically
@@ -189,7 +188,7 @@ forge feature create "add multi-tenant workspace support" --mode structured
 
 **Fix a bug quickly:**
 ```bash
-forge bug create "null pointer on logout" --mode fast
+forge run "null pointer on logout" --type bug --mode fast
 forge workflow watch <run-id>
 # intake-gate → architect → builder → quality-guard → devops
 ```
@@ -218,7 +217,7 @@ graph TD
     CLI["CLI / TUI<br/>(forge start)"] --> Server["HTTP Server<br/>localhost:3131"]
     CLI --> Console["Interactive Console<br/>(TUI shell)"]
     Console --> Server
-    Server --> Queue["BullMQ Queue<br/>(SQLite-backed)"]
+    Server --> Queue["SQLite Queue"]
     Queue --> Worker["Job Worker<br/>(concurrency: N)"]
     Worker --> Runner["Runner Factory<br/>(claude-cli / anthropic-api / openrouter / …)"]
     Runner --> Agent["AI Agent<br/>(architect, builder, devops, …)"]
@@ -234,7 +233,7 @@ graph TD
 
 ## MCP integration
 
-Forge ships a Model Context Protocol server that lets Claude Code orchestrate Forge from inside a conversation. Claude acts as the **Receptionist** — submitting work, tracking pipelines, and reporting results without leaving the conversation.
+Forge ships a Model Context Protocol server that lets Claude Code orchestrate Forge from inside a conversation — submitting work, tracking pipelines, and reporting results without leaving the editor.
 
 Add to your Claude Code MCP config:
 
@@ -250,7 +249,7 @@ Add to your Claude Code MCP config:
 }
 ```
 
-Primary tool: `forge_submit_request`. Use `forge_run_agent_direct` to invoke a specific agent (e.g. `architect`) without going through the full pipeline. Full tool list in [docs/architecture.md](docs/architecture.md#mcp-tools).
+Primary tool: `forge_submit_request`. All work flows through the intake pipeline. Full tool list in [docs/architecture.md](docs/architecture.md#mcp-tools).
 
 ---
 
@@ -287,7 +286,7 @@ export CLAUDE_CLI_PATH=~/.local/bin/claude
 
 ## Known limitations
 
-- **`forge login` / Forge Cloud** — login/logout commands are stubs. No public Forge Cloud exists; non-functional without a self-hosted backend.
+- **Local-only** — Forge runs entirely on your machine. There is no cloud service or remote sync.
 - **Sequential pipeline stages** — parallel stage execution is not supported.
 - **No built-in git integration** — the devops agent can create branches/PRs when prompted, but Forge does not manage git automatically.
 - **Cost tracking is provider-scoped** — only `anthropic-api` and `openrouter` contribute to budget counters. `claude-cli` reports $0.

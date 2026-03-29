@@ -1,6 +1,4 @@
 import { fetchBudgetUsage, fetchBudgetPolicies } from '../../api/budget';
-import { showConfirm } from '../shared/confirm-dialog';
-import { addToast } from '../shared/toast';
 import { EmptyState } from '../shared/empty-state';
 import { SkeletonCard } from '../shared/skeleton';
 import { SkeletonRows } from '../shared/skeleton';
@@ -33,7 +31,6 @@ export function BudgetPage() {
             <th>Monthly Limit</th>
             <th>Alert At</th>
             <th>Created</th>
-            <th>Actions</th>
           </tr>
         </thead>
         <tbody id="policies-tbody"></tbody>
@@ -46,7 +43,7 @@ export function BudgetPage() {
 
   // Skeleton
   for (let i = 0; i < 2; i++) statsGrid.appendChild(SkeletonCard());
-  policiesTbody.appendChild(SkeletonRows(2, 5));
+  policiesTbody.appendChild(SkeletonRows(2, 4));
 
   const loadUsage = async () => {
     const usage = await fetchBudgetUsage();
@@ -94,7 +91,7 @@ export function BudgetPage() {
     if (policies.length === 0) {
       const emptyRow = document.createElement('tr');
       const emptyCell = document.createElement('td');
-      emptyCell.colSpan = 5;
+      emptyCell.colSpan = 4;
       emptyCell.appendChild(EmptyState({ icon: '⊡', title: 'No policies', description: 'Add a budget policy to control spend.' }));
       emptyRow.appendChild(emptyCell);
       policiesTbody.appendChild(emptyRow);
@@ -107,23 +104,8 @@ export function BudgetPage() {
         <td><strong>$${p.monthlyLimit.toFixed(0)}</strong></td>
         <td>${Math.round(p.alertThreshold * 100)}%</td>
         <td style="font-size:12px;color:var(--text3)">${new Date(p.createdAt).toLocaleDateString()}</td>
-        <td>
-          <button class="btn-icon btn-danger" data-id="${esc(p.id)}">Delete</button>
-        </td>
       </tr>
     `).join('');
-
-    policiesTbody.querySelectorAll('[data-id]').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        const ok = await showConfirm({
-          title: 'Delete Policy',
-          message: 'Are you sure you want to delete this budget policy?',
-          confirmLabel: 'Delete',
-          danger: true,
-        });
-        if (ok) addToast('Policy deleted', 'success');  // TODO: call delete API with (btn as HTMLElement).dataset.id
-      });
-    });
   };
 
   Promise.all([loadUsage(), loadPolicies()]).catch(() => {});

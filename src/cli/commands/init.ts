@@ -769,8 +769,8 @@ async function runInit(opts: { yes?: boolean }): Promise<void> {
 
     p.log.step("Next steps:");
     p.log.message("  forge start");
-    p.log.message('  forge feature create "add login screen" --mode structured');
-    p.log.message('  forge bug create "fix crash on launch" --mode fast');
+    p.log.message('  forge run "add login screen" --type feature');
+    p.log.message('  forge run "fix crash on launch" --type bug --mode fast');
 
     outro("Forge is ready.");
   } catch (err) {
@@ -1009,8 +1009,8 @@ This project is managed by **Forge** — an AI agent orchestration platform.
 
 \`\`\`bash
 forge start          # Launch the agent team
-forge feature create "add login screen" --mode structured
-forge bug create "fix crash on launch" --mode fast
+forge run "add login screen" --type feature
+forge run "fix crash on launch" --type bug --mode fast
 forge status         # Check system status
 forge doctor         # Verify setup
 \`\`\`

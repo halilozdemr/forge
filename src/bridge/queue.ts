@@ -80,10 +80,6 @@ export async function closeQueue(): Promise<void> {
   // no-op
 }
 
-export async function getRedisStatus(): Promise<boolean> {
-  return true;
-}
-
 export async function claimNextJob(workerId: string, leaseMs = DEFAULT_LEASE_MS) {
   const db = getDb();
   const now = new Date();

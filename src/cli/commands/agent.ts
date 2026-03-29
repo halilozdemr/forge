@@ -2,7 +2,7 @@ import { Command } from "commander";
 import { loadConfig } from "../../utils/config.js";
 import { isSupportedModelProvider, isValidModel } from "../../agents/validation.js";
 import { resolveCompany } from "../../utils/company.js";
-import { decrypt, redactSecrets } from "../../utils/crypto.js";
+
 
 const EDITABLE_STATUSES = new Set(["idle", "active", "paused", "terminated"]);
 
@@ -309,126 +309,6 @@ export function agentCommand(): Command {
       const companyId = await resolveCompany(opts.company);
       const { message } = await api<{ message: string }>(`/v1/agents/${slug}?companyId=${companyId}`, "DELETE");
       console.log(message);
-    });
-
-  cmd
-    .command("run <slug>")
-    .description("Execute an agent directly and stream output")
-    .option("--company <id>", "Company ID")
-    .option("--input <input>", "Direct input prompt")
-    .option("--issue <issueId>", "Issue ID to work on")
-    .option("--stream", "Stream live logs from the agent")
-    .action(async (slug, opts) => {
-      const companyId = await resolveCompany(opts.company);
-      if (!opts.input && !opts.issue) {
-        throw new Error("Must provide either --input or --issue");
-      }
-
-      const { getDb } = await import("../../db/client.js");
-      const db = getDb();
-      
-      const agent = await db.agent.findUnique({ where: { companyId_slug: { companyId, slug } } });
-      if (!agent) throw new Error(`Agent ${slug} not found`);
-
-      const { AgentRegistry } = await import("../../agents/registry.js");
-      const registry = new AgentRegistry(db);
-      const systemPrompt = await registry.resolvePrompt(agent);
-
-      const config = loadConfig();
-
-      let inputStr = opts.input || "";
-      let lockedIssueId: string | null = null;
-      let goalContext = "";
-
-      if (opts.issue) {
-         const issue = await db.issue.findUnique({ where: { id: opts.issue } });
-         if (!issue) throw new Error(`Issue ${opts.issue} not found`);
-
-         const lockResult = await db.issue.updateMany({
-           where: { id: opts.issue, executionLockedAt: null },
-           data: { executionLockedAt: new Date(), executionAgentSlug: slug }
-         });
-         if (lockResult.count === 0) {
-           throw new Error(`Issue ${opts.issue} is already being executed.`);
-         }
-         lockedIssueId = opts.issue;
-
-         // Check if goalId exists in schema before using it
-         if ((issue as any).goalId) {
-           const { buildGoalChainContext } = await import("../../utils/goal.js");
-           goalContext = await buildGoalChainContext(db, (issue as any).goalId);
-         }
-
-         const issueContext = `Execute issue: ${issue.title}\n\n${issue.description ?? ""}`;
-         inputStr = goalContext 
-           ? `${goalContext}\n${issueContext}\n\n${inputStr}`
-           : `${issueContext}\n\n${inputStr}`;
-      }
-
-      // Fetch and decrypt secrets
-      const companySecrets = await db.companySecret.findMany({ where: { companyId } });
-      const secrets: Record<string, string> = {};
-      for (const s of companySecrets) {
-        try {
-          secrets[s.name] = decrypt(s.value);
-        } catch (e) {
-          // silently ignore decryption errors here
-        }
-      }
-
-      // Resolve placeholders in systemPrompt and inputStr
-      let finalSystemPrompt = systemPrompt;
-      for (const [name, value] of Object.entries(secrets)) {
-        const placeholder = new RegExp(`{{secrets\.${name}}}`, 'g');
-        finalSystemPrompt = finalSystemPrompt.replace(placeholder, value);
-        inputStr = inputStr.replace(placeholder, value);
-      }
-
-      console.log(`\n\x1b[1m🚀 Starting direct execution for @${slug}\x1b[0m\n`);
-
-      const { createRunner } = await import("../../bridge/runners/factory.js");
-      const runner = createRunner(agent.modelProvider);
-      
-      try {
-        const result = await runner.run({
-          projectPath: config.projectPath,
-          agentSlug: slug,
-          model: agent.model,
-          systemPrompt: finalSystemPrompt,
-          input: inputStr,
-          permissions: JSON.parse(agent.permissions),
-          adapterConfig: JSON.parse((agent as any).adapterConfig || "{}"),
-          env: secrets,
-          onStream: (chunk) => {
-            const redacted = redactSecrets(chunk, secrets);
-            process.stdout.write(redacted);
-
-            if (opts.stream) {
-              // Emit to WebSocket via API
-              const eventLine = redacted.trim();
-              if (eventLine) {
-                api("/v1/events/emit", "POST", {
-                  type: "heartbeat.log",
-                  agentSlug: slug,
-                  line: eventLine
-                }).catch(() => {}); // fire and forget
-              }
-            }
-          },
-        });
-
-        console.log(`\n\n\x1b[1m✨ Execution complete (${result.durationMs}ms)\x1b[0m`);
-        if (!result.success) {
-          console.error(`\x1b[31mError: ${result.error}\x1b[0m`);
-        }
-      } finally {
-        if (lockedIssueId) {
-          await db.issue.update({
-            where: { id: lockedIssueId },
-            data: { executionLockedAt: null, executionAgentSlug: null, executionJobId: null }
-          });
-        }
-      }
     });
 
   cmd

@@ -9,7 +9,7 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function fetchJson<T>(path: string, options: RequestInit = {}): Promise<T> {
+async function fetchJson<T>(path: string, options: RequestInit = {}, emptyValue?: T): Promise<T> {
   const url = `${API_BASE}${path.startsWith("/") ? path : `/${path}`}`;
   const res = await fetch(url, {
     ...options,
@@ -20,8 +20,10 @@ async function fetchJson<T>(path: string, options: RequestInit = {}): Promise<T>
   });
 
   const text = await res.text();
-  let data: unknown = {};
-  if (text) {
+  let data: unknown;
+  if (!text) {
+    data = emptyValue ?? {};
+  } else {
     try {
       data = JSON.parse(text);
     } catch {
@@ -112,43 +114,16 @@ async function getCompanyId(): Promise<string> {
 }
 
 async function fetchApi(path: string, options: RequestInit = {}) {
-  const url = `${API_BASE}${path.startsWith("/") ? path : `/${path}`}`;
   try {
-    const res = await fetch(url, {
-      ...options,
-      headers: {
-        "Content-Type": "application/json",
-        ...options.headers,
-      },
-    });
-    
-    // Some routes return 204 or empty text
-    const text = await res.text();
-    let data;
-    if (text) {
-        try {
-            data = JSON.parse(text);
-        } catch(e) {
-            data = { message: text };
-        }
-    } else {
-        data = { success: res.ok };
-    }
-
-    if (!res.ok) {
-      return {
-        isError: true,
-        content: [{ type: "text" as const, text: `API Error (${res.status}): ${JSON.stringify(data)}` }],
-      };
-    }
-    
+    const data = await fetchJson<unknown>(path, options, { success: true });
     return {
       content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }],
     };
   } catch (err: any) {
+    const message = err instanceof Error ? err.message : String(err);
     return {
       isError: true,
-      content: [{ type: "text" as const, text: `Network Error: ${err.message}` }],
+      content: [{ type: "text" as const, text: message.startsWith("API Error") ? message : `Network Error: ${message}` }],
     };
   }
 }
@@ -316,24 +291,6 @@ export async function startMcpServer() {
         method: "PUT",
         body: JSON.stringify(updates),
       });
-    }
-  );
-
-  server.tool(
-    "forge_run_issue",
-    "Legacy admin tool: dispatch an agent to execute an issue manually. Returns a jobId that you must check asynchronously.",
-    {
-      id: z.string().describe("The issue ID to run"),
-      agentSlug: z.string().describe("The agent to assign (e.g., 'builder', 'architect', 'quality-guard')"),
-      instructions: z.string().describe("Instructions for the agent to execute this issue"),
-    },
-    async ({ id, agentSlug, instructions }) => {
-      const cid = await getCompanyId();
-      const res = await fetchApi(`/issues/${id}/run`, {
-        method: "POST",
-        body: JSON.stringify({ companyId: cid, agentSlug, input: instructions }),
-      });
-      return res; // typically { jobId: "..." }
     }
   );
 
@@ -602,9 +559,9 @@ export async function startMcpServer() {
 
   server.tool(
     "forge_get_job",
-    "Check the status of an async job (use for polling after run_issue)",
+    "Check the status of a queue job by ID",
     {
-      jobId: z.string().describe("The jobId returned from forge_run_issue"),
+      jobId: z.string().describe("The job ID to look up"),
     },
     async ({ jobId }) => {
       // /v1/queue/jobs?companyId=... won't easily filter by jobId without querying sqlite.

@@ -58,27 +58,34 @@ function printIntakeResult(result: IntakeResult, mode: ExecutionMode, modeSource
 function resolveBugTitle(titleArg?: string, titleOpt?: string): string {
   const title = titleOpt?.trim() || titleArg?.trim();
   if (!title) {
-    throw new Error('Bug title is required. Use `forge bug create "..."` or `--title "..."`.');
+    throw new Error('Bug title is required. Use `forge run "..." --type bug`, `forge bug create "..."`, or `--title "..."`.');
   }
   return title;
 }
 
 export function bugCommand(): Command {
   const cmd = new Command("bug")
-    .description("Start and track bug-fix work")
+    .description("Compatibility shortcuts for bug-fix work")
     .addHelpText(
       "after",
       `
-Examples:
+Primary path:
+  forge run "fix crash on launch" --type bug --mode fast
+
+Compatibility shortcuts:
   forge bug create "fix crash on launch"
   forge bug create "fix crash on launch" --mode structured
   forge bug run --title "fix crash on launch" --mode fast
+
+Examples:
+  forge run "fix crash on launch" --type bug --mode fast
+  forge bug create "fix crash on launch"
 `,
     );
 
   cmd
     .command("create")
-    .description("Create a bug report and start work")
+    .description("Compatibility alias to create a bug report and start work")
     .argument("[title]", "Bug title")
     .option("--title <title>", "Bug title (optional if positional title is provided)")
     .option("--description <desc>", "Bug description / reproduction steps")
@@ -98,7 +105,7 @@ Examples:
 
   cmd
     .command("run")
-    .description("Start bug-fix work now")
+    .description("Compatibility alias to start bug-fix work now")
     .argument("[title]", "Bug title")
     .option("--title <title>", "Bug title (optional if positional title is provided)")
     .option("--description <desc>", "Bug description / reproduction steps")

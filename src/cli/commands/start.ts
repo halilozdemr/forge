@@ -13,7 +13,6 @@ import { createServer } from "../../server/index.js";
 import { createAgentWorker, closeWorker } from "../../bridge/worker.js";
 import { getQueue, closeQueue } from "../../bridge/queue.js";
 import { startHeartbeatScheduler, stopHeartbeatScheduler } from "../../heartbeat/scheduler.js";
-import { startSyncWorker, stopSyncWorker } from "../../sync/worker.js";
 import { syncProjectOpenCodeConfig, syncProjectClientProjectionsFromRegistry } from "../../opencode/project-config.js";
 import { startForgeConsoleShell } from "../console/shell.js";
 
@@ -136,24 +135,20 @@ async function runStart(opts: {
   // 5. Heartbeat scheduler
   await startHeartbeatScheduler();
 
-  // 6. Sync worker
-  await startSyncWorker();
-
-  // 7. HTTP server
+  // 6. HTTP server
   const server = await createServer(config.port, config.host);
 
-  // 8. PID file
+  // 7. PID file
   writePidFile();
 
   let stopConsoleShell: (() => void) | null = null;
 
-  // 9. Graceful shutdown
+  // 8. Graceful shutdown
   setupGracefulShutdown(async () => {
     stopConsoleShell?.();
     log.info("Shutting down...");
     await server.close();
     await stopHeartbeatScheduler();
-    await stopSyncWorker();
     await closeWorker();
     await closeQueue();
     await disconnectDb();

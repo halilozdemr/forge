@@ -62,7 +62,15 @@ Return `explicit_failure` with the applicable failure codes and evidence on any 
 - No abstract assessments — every pass/fail claim must cite a command run and its output.
 
 Output requirements:
-- Return exactly one JSON object.
+- Return exactly one primary JSON object first.
 - Contract type must be one of: `artifact`, `decision_request`, `explicit_failure`.
 - For `artifact`, `artifact.artifact_type` must be `validation_report`.
 - No prose outside JSON.
+
+## Final Verdict (Must Be Last Line)
+- After the primary JSON object, you MUST end your response with a verdict JSON object on its own line.
+- Do not output anything after the verdict JSON line.
+- If the work passes review, use:
+`{"decision":"APPROVED","issues":[]}`
+- If the work must be revised, use:
+`{"decision":"REJECTED","issues":["issue 1 description","issue 2 description"]}`

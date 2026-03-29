@@ -4,7 +4,6 @@ import { BudgetGate } from "./budget-gate.js";
 import { createChildLogger } from "../utils/logger.js";
 import type { AgentJobData } from "./queue.js";
 import { claimNextJob, renewJobLease } from "./queue.js";
-import { addSyncEvent } from "../sync/worker.js";
 import { resolveWorkspace, cleanWorkspace } from "./workspace.js";
 import { updateSessionUsage, shouldRotate, rotateSession } from "./session.js";
 import { decrypt, redactSecrets } from "../utils/crypto.js";
@@ -59,7 +58,7 @@ export function createAgentWorker(concurrency = 3): any {
 }
 
 
-function resolveAgentTimeoutMs(agentSlug: string, requestedTimeoutMs?: number): number {
+export function resolveAgentTimeoutMs(agentSlug: string, requestedTimeoutMs?: number): number {
   if (requestedTimeoutMs) return requestedTimeoutMs;
 
   switch (agentSlug) {
@@ -77,7 +76,7 @@ function resolveAgentTimeoutMs(agentSlug: string, requestedTimeoutMs?: number): 
   }
 }
 
-async function processJob(job: any): Promise<void> {
+export async function processJob(job: any): Promise<void> {
   const db = getDb();
   const budgetGate = new BudgetGate(db);
   const dispatcher = new PipelineDispatcher(db);
@@ -121,10 +120,6 @@ async function processJob(job: any): Promise<void> {
         where: { companyId, slug: agentSlug },
         data: { status: "paused" },
       });
-      const ag = await db.agent.findUnique({ where: { companyId_slug: { companyId, slug: agentSlug } } });
-      if (ag) {
-        addSyncEvent('agent.updated', { agentId: ag.id, status: "paused", companyId, slug: agentSlug, name: ag.name, role: ag.role });
-      }
       throw new Error(`Budget limit exceeded: ${budgetCheck.reason}`);
     }
 
@@ -133,7 +128,6 @@ async function processJob(job: any): Promise<void> {
         where: { id: issueId },
         data: { status: "in_progress" },
       });
-      addSyncEvent('issue.updated', { issueId, status: "in_progress", companyId });
     }
 
     if (data.pipelineStepRunId) {
@@ -288,16 +282,6 @@ async function processJob(job: any): Promise<void> {
             durationMs: result.durationMs,
           },
         });
-        
-        const now = new Date();
-        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-        const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-        const budgetRes = await db.costEvent.aggregate({
-          where: { companyId, createdAt: { gte: startOfMonth, lte: endOfMonth } },
-          _sum: { costUsd: true }
-        });
-        const monthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-        addSyncEvent('budget.updated', { companyId, month: monthStr, totalUsd: budgetRes._sum.costUsd || 0 });
 
         // Phase 5: Session Usage and Rotation
         await updateSessionUsage(agent.id, issueId || undefined, result.tokenUsage);
@@ -324,7 +308,6 @@ async function processJob(job: any): Promise<void> {
           executionJobId: null,
         },
       });
-      addSyncEvent('issue.updated', { issueId, status: finalStatus, companyId });
     }
 
     await db.queueJob.update({
@@ -496,7 +479,7 @@ export function isWorkerRunning(): boolean {
   return isRunning;
 }
 
-function estimateCost(provider: string, model: string, inputTokens: number, outputTokens: number): number {
+export function estimateCost(provider: string, model: string, inputTokens: number, outputTokens: number): number {
   if (provider === "claude-cli") return 0;
   if (provider === "anthropic-api") {
     if (model.includes("opus")) return (inputTokens * 15 + outputTokens * 75) / 1_000_000;

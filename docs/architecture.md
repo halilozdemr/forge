@@ -7,8 +7,8 @@
 | **CLI** | `src/cli/` | All `forge` commands. Each command is one file under `commands/`. |
 | **Console / TUI** | `src/cli/console/` | Interactive terminal UI. See [console.md](console.md). |
 | **Server** | `src/server/` | Fastify REST API on `localhost:3131`. All CLI and Web UI requests go through here. |
-| **Worker** | `src/bridge/worker.ts` | BullMQ job processor. Picks up queued jobs, spawns the AI runner, streams output, writes logs and artifacts to SQLite. |
-| **Queue** | `src/bridge/queue.ts` | In-process BullMQ queue backed by SQLite. No Redis required. |
+| **Worker** | `src/bridge/worker.ts` | Job processor. Picks up queued jobs, spawns the AI runner, streams output, writes logs and artifacts to SQLite. |
+| **Queue** | `src/bridge/queue.ts` | In-process SQLite-backed job queue. No Redis required. |
 | **Runner Factory** | `src/bridge/runners/` | Maps `modelProvider` string to a provider-specific runner class. |
 | **Dispatcher** | `src/orchestrator/dispatcher.ts` | Pipeline state machine. Resolves `dependsOn`, advances steps, injects harness sprints dynamically. |
 | **Pipelines** | `src/orchestrator/pipelines/` | Pipeline definitions for feature, bug, refactor, release, and harness. |
@@ -37,7 +37,7 @@
 │   │   └── routes/           # One file per route group
 │   ├── bridge/
 │   │   ├── worker.ts         # Main job processor
-│   │   ├── queue.ts          # BullMQ queue setup
+│   │   ├── queue.ts          # SQLite job queue setup
 │   │   └── runners/          # Provider-specific runner classes
 │   ├── orchestrator/
 │   │   ├── dispatcher.ts     # Pipeline state machine
@@ -73,7 +73,7 @@
 | Intake & Pipelines | `forge_submit_request`, `forge_run_agent_direct`, `forge_get_pipeline`, `forge_wait_pipeline`, `forge_list_pipeline_steps`, `forge_retry_pipeline_step`, `forge_cancel_pipeline` |
 | Agents | `forge_list_agents`, `forge_get_agent`, `forge_hire_agent`, `forge_update_agent`, `forge_fire_agent` |
 | Status & Jobs | `forge_get_status`, `forge_get_budget`, `forge_list_queue`, `forge_get_job` |
-| Issues (admin) | `forge_list_issues`, `forge_get_issue`, `forge_create_issue`, `forge_update_issue`, `forge_run_issue` |
+| Issues | `forge_list_issues`, `forge_get_issue`, `forge_create_issue`, `forge_update_issue` |
 | Sprints | `forge_list_sprints`, `forge_create_sprint` |
 
 ---

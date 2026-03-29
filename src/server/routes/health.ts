@@ -1,6 +1,5 @@
 import type { FastifyInstance } from "fastify";
 import { getDb } from "../../db/client.js";
-import { getRedisStatus } from "../../bridge/queue.js";
 import { isWorkerRunning } from "../../bridge/worker.js";
 
 export async function healthRoutes(server: FastifyInstance) {
@@ -13,11 +12,10 @@ export async function healthRoutes(server: FastifyInstance) {
       dbHealthy = false;
     }
 
-    const redisHealthy = await getRedisStatus();
     const workerHealthy = isWorkerRunning();
 
-    const allHealthy = dbHealthy && redisHealthy && workerHealthy;
-    const anyHealthy = dbHealthy || redisHealthy || workerHealthy;
+    const allHealthy = dbHealthy && workerHealthy;
+    const anyHealthy = dbHealthy || workerHealthy;
 
     let status: "healthy" | "degraded" | "down" = "healthy";
     if (!allHealthy) {
@@ -31,7 +29,6 @@ export async function healthRoutes(server: FastifyInstance) {
       timestamp: new Date().toISOString(),
       components: {
         db: dbHealthy,
-        redis: redisHealthy,
         worker: workerHealthy,
       },
     };

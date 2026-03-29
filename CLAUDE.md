@@ -1,101 +1,120 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+## What Forge Is
 
-# Forge - Claude Code Context
+Forge is a local-first AI orchestration runtime for software work. You submit a feature, bug, refactor, or release request, and Forge runs it through a staged agent pipeline with tracking, retries, approvals, and artifacts.
 
-This project uses **Forge**, a multi-agent orchestrated system where Claude Code itself acts as the **Receptionist**.
+## Architecture Overview
 
-## Receptionist Logic (Your Role)
+- Runtime bootstrap: `forge start` runs DB migrations/seeding, starts queue worker(s), heartbeat scheduler, HTTP server, and (by default) the interactive TUI console.
+- Orchestration core: `src/orchestrator/` builds pipeline plans and dispatches step runs with dependency-aware scheduling.
+- Agent execution: `src/bridge/worker.ts` pulls queued jobs, resolves workspace context, runs the configured provider runner, and reports step results back to the dispatcher.
+- API surface: Fastify routes in `src/server/routes/` expose intake, workflow status, approvals, queue, budget, and related system endpoints under `/v1`.
+- Storage: Prisma + SQLite persistence for projects, issues, pipeline runs/steps, artifacts, approvals, budgets, and logs.
 
-You are the **Receptionist** — an orchestrator, NOT an implementer. You NEVER write code, create files, or directly implement anything yourself. All work is delegated to Forge agents.
+## Primary Surfaces
 
-### Strict Rules
-- **NEVER write code.** Not even "simple" HTML, scripts, or config files.
-- **NEVER implement directly.** No matter how small the task seems.
-- **ALWAYS persist approved work in the Forge backend** before execution.
-- If you catch yourself writing code or files — STOP. Create an issue instead.
+- TUI console (primary): `forge start`
+- MCP server (integration surface): `forge-mcp` / `npm run mcp`
+- Web dashboard (secondary, read-heavy monitoring): `http://localhost:3131`
 
-### Your Workflow
-1. **Intake**: Understand the user's request. Ask max 1 clarifying question if truly needed.
-2. **Brief**: Summarize what needs to be done.
-3. **Confirm**: Show the brief and ask "Shall I proceed?"
-4. **Submit Request**: Call `forge_submit_request` for approved feature/bug/refactor/release work.
-5. **Track Pipeline**: Call `forge_get_pipeline` and `forge_list_pipeline_steps` to observe the backend pipeline.
-6. **Direct Specialist Mode**: If the user explicitly wants a specialist, call `forge_run_agent_direct`.
-7. **Report**: Summarize the backend pipeline status or completion result to the user.
+## How to Run
 
-### Which Agent for What
-- **pm**: Feature requests that need sprint planning and task breakdown
-- **architect**: Complex technical decisions, refactoring, system design
-- **builder**: Direct coding tasks (after architect has planned)
-- **debugger**: Bug fixes, crashes, errors
-- **designer**: UI/UX specs, wireframes
-- **devops**: Git operations, deployments, releases
-- **reviewer**: Code review requests
-
-### Flow Examples
-- Submit a feature → brief → `forge_submit_request` type: `feature`
-- Fix a bug → brief/confirmation if needed → `forge_submit_request` type: `bug`
-- Refactor → brief → `forge_submit_request` type: `refactor`
-- Direct specialist → `forge_run_agent_direct` requestedAgentSlug: `architect`
-
-## MCP Tool Guide
-
-You have access to Forge MCP tools to manage the system:
-- **Agents**: `forge_list_agents`, `forge_get_agent`, `forge_hire_agent`, `forge_update_agent`, `forge_fire_agent`
-- **Intake & Pipelines**: `forge_submit_request`, `forge_get_pipeline`, `forge_list_pipeline_steps`, `forge_retry_pipeline_step`, `forge_cancel_pipeline`, `forge_run_agent_direct`
-- **Issues (Legacy/Admin)**: `forge_list_issues`, `forge_get_issue`, `forge_create_issue`, `forge_update_issue`, `forge_run_issue`
-- **Sprints**: `forge_list_sprints`, `forge_create_sprint`
-- **Status & Jobs**: `forge_get_status`, `forge_get_budget`, `forge_list_queue`, `forge_get_job`
-
-**Important Note on `companyId`**: The `forge-mcp` server automatically resolves the `companyId` and `projectId` based on the database and context. You usually do not need to provide it.
-
-## Directory Structure
-- `src/mcp`: The MCP server for Claude Code integration.
-- `src/cli`: The `forge` CLI commands.
-- `src/server`: Fastify REST API server.
-- `src/bridge`: Execution runners and job workers.
-- `src/bridge/runners/`: Provider-specific runners (factory.ts maps `modelProvider` string to runner class).
-- `src/orchestrator/pipelines/`: Pipeline definitions for each issue type (feature, bug, refactor, release).
-- `src/db`: Prisma database schemas and seed scripts.
-- `scripts`: Migration scripts (like `seed-agents.ts`).
-- `.forge/context/claude-projection.md`: Generated registry-backed Claude projection details (agent slugs, models, runtime rules).
-
-## Development Commands
 ```bash
-npm run dev          # Run forge CLI in dev mode (tsx, no build needed)
-npm run mcp          # Start the MCP server
-npm run build        # Build webui + tsc compile to dist/
-npm run test         # Run tests with vitest
-npm run lint         # Type-check only (tsc --noEmit)
-npm run db:migrate   # Run Prisma migrations (dev)
-npm run db:generate  # Regenerate Prisma client after schema changes
-npm run db:push      # Push schema changes without migration
+forge init
+forge start
+forge run "add login screen" --type feature --mode fast
 ```
 
-## Pipeline Architecture
-Each issue type maps to a pipeline of `PipelineStep[]` with `dependsOn` dependency tracking:
-- **feature**: `intake-gate` → `architect` → `builder` → `quality-guard` → `devops` → `retrospective-analyst`
-- **bug**: `intake-gate` → `architect` → `builder` → `quality-guard` → `devops`
-- **refactor**: `intake-gate` → `architect` → `builder` → `quality-guard` → `devops`
-- **release**: `intake-gate` → `architect` → `builder` → `quality-guard` → `devops` → `retrospective-analyst`
+`forge run` is the primary submission command in V2.3+.
+`forge feature create ...` and `forge bug create ...` remain supported compatibility commands.
 
-Stage definitions live in `src/orchestrator/pipelines/`.
+## Pipeline Modes
 
-## Runner Providers
-`src/bridge/runners/factory.ts` maps `modelProvider` to runner class. Supported values:
-`claude-cli`, `anthropic-api`, `openrouter`, `gemini-cli`, `gemini-api`, `codex-cli`, `opencode-cli`, `ollama`, `process`, `http`, `cursor`
+### Fast Mode (default)
 
-## Model Configuration
-Models and providers are configured dynamically in `~/.forge/config.json`.
-The defaults typically are:
-- Heavy agents (Architect, Reviewer): Claude Sonnet via `claude-cli` or `anthropic-api`
-- Light agents (PM, Builder, Devops): Deepseek V3, Gemini 2.0 Flash via `openrouter` or `gemini-cli`
+Fast mode runs the standard issue pipeline:
 
-`claude-cli` provider has $0 cost (uses existing subscription). `anthropic-api` costs are tracked per-job in `CostEvent`.
+- feature: `intake-gate -> architect -> builder -> quality-guard -> devops -> retrospective-analyst`
+- bug: `intake-gate -> architect -> builder -> quality-guard -> devops`
+- refactor: `intake-gate -> architect -> builder -> quality-guard -> devops`
+- release: `intake-gate -> architect -> builder -> quality-guard -> devops -> retrospective-analyst`
 
-## Budget & Cost Tracking
-- `BudgetGate` blocks job execution when monthly limits are exceeded; agent is auto-paused.
-- Token usage is logged to `CostEvent` table and aggregated monthly per company.
-- Cost estimation is in `worker.ts:estimateCost()`.
+Key behavior:
+
+- Each step receives transitive completed upstream outputs as appended context (classic pipeline context propagation).
+- Context injection is bounded (`4000` chars per upstream stage, `12000` total cap).
+- `quality-guard` can reject and loop back to `builder` with revision feedback (`maxRevisions: 2` on official fast pipelines).
+
+### Structured Mode
+
+Structured mode routes feature/bug/refactor/release requests into the harness pipeline:
+
+- `planner`
+- `sprint-1-contract -> sprint-1-contract-review -> sprint-1-build -> sprint-1-evaluate`
+- Sprints `2..N` are appended dynamically from `planner` output.
+
+Structured runs use typed artifacts (for example `ProductSpec`, `SprintContract`, `BuildResult`, `EvaluationReport`) and include explicit sprint decision points and approval-aware progression.
+
+## Development Commands
+
+```bash
+# Runtime
+forge init
+forge start
+forge start --headless
+forge run "fix crash" --type bug --mode fast
+
+# Build / test / lint
+npm run build
+npm run test
+npm run lint
+
+# Local development
+npm run dev
+npm run mcp
+
+# Database
+npm run db:migrate
+npm run db:generate
+npm run db:push
+```
+
+## Directory Structure
+
+- `bin/` — CLI entrypoints (`forge`, `forge-mcp`)
+- `src/cli/` — command implementations and TUI console shell
+- `src/orchestrator/` — intake service, dispatcher, pipeline builders, harness artifact handling
+- `src/bridge/` — worker loop, queue integration, provider runners, workspace/session helpers
+- `src/server/` — Fastify server and `/v1` route handlers
+- `src/mcp/` — MCP server implementation for Claude Code integration
+- `src/agents/` — agent registry/loading/validation logic
+- `src/db/` + `prisma/` — DB client, migration/seeding glue, and Prisma schema/migrations
+- `ai-system/official/agents/` — official prompt files used by pipeline agents
+- `webui/` — dashboard frontend (secondary monitoring surface)
+- `scripts/` — utility scripts (for example seeding helpers)
+
+## For Claude Code (MCP Integration)
+
+This section is MCP-specific. It is not Forge's overall identity.
+
+When Claude is connected to Forge via MCP, it should behave as an orchestration assistant:
+
+1. Clarify request intent and desired work type (`feature`, `bug`, `refactor`, `release`) and mode (`fast` or `structured`) if needed.
+2. Submit approved work via `forge_submit_request` (preferred primary MCP entrypoint).
+3. Track progress via `forge_get_pipeline`, `forge_wait_pipeline`, and `forge_list_pipeline_steps`.
+4. Report status/results and use retry/cancel tools when needed.
+5. Use `forge_run_agent_direct` only for explicit direct specialist requests.
+
+### MCP Tool Surface
+
+- Agents: `forge_list_agents`, `forge_get_agent`, `forge_hire_agent`, `forge_update_agent`, `forge_fire_agent`
+- Intake & pipeline: `forge_submit_request`, `forge_run_agent_direct`, `forge_get_pipeline`, `forge_wait_pipeline`, `forge_list_pipeline_steps`, `forge_retry_pipeline_step`, `forge_cancel_pipeline`
+- Issues: `forge_list_issues`, `forge_get_issue`, `forge_create_issue`, `forge_update_issue`
+- Sprints: `forge_list_sprints`, `forge_create_sprint`
+- System status: `forge_get_status`, `forge_get_budget`, `forge_list_queue`, `forge_get_job`
+
+Notes:
+
+- `forge-mcp` resolves default `companyId`/`projectId` from backend context, so most calls do not need those IDs manually.
+- MCP flow is intake-first; `forge_submit_request` is the preferred entrypoint for all work submission.

@@ -67,7 +67,6 @@ export interface HealthStatus {
   status: 'healthy' | 'degraded' | 'down';
   components: {
     db: boolean;
-    redis: boolean;
     worker: boolean;
   };
 }

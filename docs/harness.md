@@ -2,7 +2,9 @@
 
 ## User-facing vs internal terminology
 
-When you run `forge feature create "..." --mode structured`, you are choosing **structured** mode. Internally, Forge routes this through the **harness** pipeline.
+When you run `forge run "..." --type feature --mode structured`, you are choosing **structured** mode. Internally, Forge routes this through the **harness** pipeline.
+
+`forge run` is the primary V2.3 submission path. `forge feature create ...` and `forge bug create ...` still work as compatibility aliases, but they are not the main path described in these docs.
 
 - `structured` = the user-facing term. Describes what you experience: planned, checkpointed, reviewable work.
 - `harness` = the internal runtime that implements it.
@@ -41,7 +43,7 @@ planner
 
 ```mermaid
 graph TD
-    Request["forge feature create … --mode structured"] --> Planner["planner<br/>→ ProductSpec"]
+    Request["forge run … --type feature --mode structured"] --> Planner["planner<br/>→ ProductSpec"]
     Planner --> C1["sprint-1-contract<br/>harness-builder"]
     C1 --> R1["sprint-1-contract-review<br/>evaluator"]
     R1 -->|APPROVED| B1["sprint-1-build<br/>harness-builder"]
