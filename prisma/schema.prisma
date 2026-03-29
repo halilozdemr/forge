@@ -32,6 +32,7 @@ model Company {
   approvals      Approval[]
   labels         Label[]
   pipelineRuns   PipelineRun[]
+  telegramUsers  TelegramUser[]
 
   @@map("companies")
 }
@@ -561,4 +562,23 @@ model IssueLabel {
 
   @@id([issueId, labelId])
   @@map("issue_labels")
+}
+
+// 22. Telegram User Pairings
+model TelegramUser {
+  id              String   @id @default(cuid())
+  companyId       String
+  forgeUserId     String   // Forge user identifier (email or username)
+  telegramUserId  BigInt   // Telegram user ID from Telegram Bot API
+  telegramUsername String? // Optional: Telegram username for reference
+  pairedAt        DateTime @default(now())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, forgeUserId])
+  @@unique([companyId, telegramUserId])
+  @@index([companyId, createdAt])
+  @@map("telegram_users")
 }

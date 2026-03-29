@@ -6,6 +6,7 @@ export default defineConfig({
       'src/__tests__/**/*.test.ts',
       'src/orchestrator/**/*.test.ts',
       'src/bridge/**/*.test.ts',
+      'src/telegram/**/*.test.ts',
     ],
     environment: 'node',
   },
