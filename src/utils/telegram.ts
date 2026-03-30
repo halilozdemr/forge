@@ -123,3 +123,51 @@ export async function testTelegramConnection(
     };
   }
 }
+
+/**
+ * Sends a Telegram message to the configured chat
+ * Returns true if message was sent successfully, false if it failed
+ * Does not throw errors - failures are logged but don't block execution
+ */
+export async function sendTelegramMessage(
+  botToken: string,
+  chatId: string,
+  text: string
+): Promise<boolean> {
+  try {
+    if (!botToken || !chatId) {
+      // Credentials not configured - silently skip
+      return false;
+    }
+
+    const sendUrl = `${TELEGRAM_API_BASE}/bot${botToken}/sendMessage`;
+    const response = await fetch(sendUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: text,
+      }),
+    });
+
+    if (!response.ok) {
+      // Log error but don't throw
+      const errorData = (await response.json()) as { description?: string };
+      console.error(
+        `Failed to send Telegram message: HTTP ${response.status} - ${
+          errorData.description || "Unknown error"
+        }`
+      );
+      return false;
+    }
+
+    const sendData = (await response.json()) as { ok?: boolean };
+    return sendData.ok === true;
+  } catch (error) {
+    // Log error but don't throw - Telegram failures should not block pipeline
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error occurred";
+    console.error(`Telegram send error: ${errorMessage}`);
+    return false;
+  }
+}

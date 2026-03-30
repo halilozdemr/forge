@@ -6,6 +6,7 @@ import type { DispatchResult, PipelineStep } from "./index.js";
 import { getHarnessArtifactType, extractStructuredArtifact, validateAndStoreArtifact, assembleHarnessStepContext } from "./harness-artifacts.js";
 import { buildSprintSteps } from "./pipelines/harness.js";
 import type { ProductSpec, EvaluationReport } from "./artifacts.js";
+import { notifyPipelineStarted, notifyPipelineCompleted, notifyPipelineFailed } from "../services/telegram-notifications.js";
 
 const log = createChildLogger("pipeline-dispatcher");
 
@@ -185,6 +186,14 @@ export class PipelineDispatcher {
         });
         emit({ type: "issue.updated", issueId: pipelineRun.issueId, status: "in_progress" });
       }
+
+      // Send Telegram notification asynchronously (fire and forget)
+      notifyPipelineStarted(
+        this.db,
+        pipelineRun.companyId,
+        pipelineRun.id,
+        pipelineRun.issue?.title
+      );
     } else if (pipelineRun.stepRuns.every((step) => step.status === "completed")) {
       await this.completePipelineRun(pipelineRun.id);
     }
@@ -387,7 +396,7 @@ export class PipelineDispatcher {
   async handleStepFailure(stepRunId: string, error: string, retryable: boolean): Promise<void> {
     const stepRun = await this.db.pipelineStepRun.findUnique({
       where: { id: stepRunId },
-      include: { pipelineRun: true },
+      include: { pipelineRun: { include: { issue: true } } },
     });
     if (!stepRun) return;
 
@@ -433,6 +442,15 @@ export class PipelineDispatcher {
       });
       emit({ type: "issue.updated", issueId: stepRun.pipelineRun.issueId, status: "failed" });
     }
+
+    // Send Telegram notification asynchronously (fire and forget)
+    notifyPipelineFailed(
+      this.db,
+      stepRun.pipelineRun.companyId,
+      stepRun.pipelineRun.id,
+      stepRun.pipelineRun.issue?.title,
+      error
+    );
   }
 
   async retryStep(pipelineRunId: string, stepKey: string): Promise<string[]> {
@@ -628,6 +646,7 @@ export class PipelineDispatcher {
   private async completePipelineRun(pipelineRunId: string): Promise<void> {
     const pipelineRun = await this.db.pipelineRun.findUnique({
       where: { id: pipelineRunId },
+      include: { issue: true },
     });
     if (!pipelineRun || pipelineRun.status === "completed") return;
 
@@ -652,6 +671,14 @@ export class PipelineDispatcher {
       });
       emit({ type: "issue.updated", issueId: pipelineRun.issueId, status: "done" });
     }
+
+    // Send Telegram notification asynchronously (fire and forget)
+    notifyPipelineCompleted(
+      this.db,
+      pipelineRun.companyId,
+      pipelineRun.id,
+      pipelineRun.issue?.title
+    );
   }
 
   /**
