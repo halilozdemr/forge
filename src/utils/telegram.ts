@@ -128,11 +128,13 @@ export async function testTelegramConnection(
  * Sends a Telegram message to the configured chat
  * Returns true if message was sent successfully, false if it failed
  * Does not throw errors - failures are logged but don't block execution
+ * @param parseMode Optional - "Markdown" or "HTML" for rich formatting
  */
 export async function sendTelegramMessage(
   botToken: string,
   chatId: string,
-  text: string
+  text: string,
+  parseMode?: "Markdown" | "HTML"
 ): Promise<boolean> {
   try {
     if (!botToken || !chatId) {
@@ -141,13 +143,20 @@ export async function sendTelegramMessage(
     }
 
     const sendUrl = `${TELEGRAM_API_BASE}/bot${botToken}/sendMessage`;
+    const payload: Record<string, string | boolean> = {
+      chat_id: chatId,
+      text: text,
+    };
+
+    // Add parse_mode if specified for rich formatting
+    if (parseMode) {
+      payload.parse_mode = parseMode;
+    }
+
     const response = await fetch(sendUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text: text,
-      }),
+      body: JSON.stringify(payload),
     });
 
     if (!response.ok) {

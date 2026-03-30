@@ -8,6 +8,7 @@ export default defineConfig({
       'src/bridge/**/*.test.ts',
       'src/server/**/*.test.ts',
       'src/telegram/**/*.test.ts',
+      'src/services/**/*.test.ts',
     ],
     environment: 'node',
   },

@@ -2,6 +2,12 @@ import type { PrismaClient } from "@prisma/client";
 import { decrypt } from "../utils/crypto.js";
 import { sendTelegramMessage } from "../utils/telegram.js";
 import { createChildLogger } from "../utils/logger.js";
+import {
+  formatPipelineStartNotification,
+  formatPipelineSuccessNotification,
+  formatPipelineFailureNotification,
+  type NotificationContext,
+} from "./telegram-message-formatters.js";
 
 const log = createChildLogger("telegram-notifications");
 
@@ -55,7 +61,52 @@ async function getTelegramCredentials(
 }
 
 /**
- * Sends a Telegram notification for pipeline start event
+ * Retrieves pipeline and issue context for detailed notifications
+ */
+async function getPipelineContext(
+  db: PrismaClient,
+  pipelineRunId: string
+): Promise<NotificationContext> {
+  const context: NotificationContext = {
+    pipelineId: pipelineRunId,
+  };
+
+  try {
+    const pipeline = await db.pipelineRun.findUnique({
+      where: { id: pipelineRunId },
+      include: {
+        issue: {
+          select: {
+            title: true,
+          },
+        },
+      },
+    });
+
+    if (pipeline) {
+      context.issueTitle = pipeline.issue?.title || null;
+      context.pipelineStage = pipeline.currentStepKey || null;
+
+      // Calculate duration if pipeline has started and either completed or is in progress
+      if (pipeline.startedAt) {
+        const endTime = pipeline.completedAt || new Date();
+        const durationMs = endTime.getTime() - pipeline.startedAt.getTime();
+        context.durationSeconds = Math.round(durationMs / 1000);
+      }
+    }
+  } catch (error) {
+    log.warn(
+      { pipelineRunId, error },
+      "Failed to retrieve pipeline context for notification"
+    );
+    // Continue with what we have - we'll still send a notification
+  }
+
+  return context;
+}
+
+/**
+ * Sends a Telegram notification for pipeline start event with rich formatting
  * Executes asynchronously without blocking pipeline execution
  */
 export async function notifyPipelineStarted(
@@ -65,19 +116,27 @@ export async function notifyPipelineStarted(
   issueTitle?: string | null
 ): Promise<void> {
   // Fire and forget - don't await this
-  getTelegramCredentials(db, companyId)
-    .then((creds) => {
+  Promise.resolve()
+    .then(async () => {
+      const creds = await getTelegramCredentials(db, companyId);
       if (!creds) {
         // Telegram not configured - no-op
         return;
       }
 
-      const message =
-        issueTitle
-          ? `🚀 Pipeline started: ${issueTitle}\n\nPipeline ID: ${pipelineRunId}`
-          : `🚀 Pipeline started\n\nPipeline ID: ${pipelineRunId}`;
+      const context = await getPipelineContext(db, pipelineRunId);
+      // Use provided issueTitle if available (for backward compatibility)
+      if (issueTitle && !context.issueTitle) {
+        context.issueTitle = issueTitle;
+      }
 
-      return sendTelegramMessage(creds.botToken, creds.chatId, message);
+      const formatted = formatPipelineStartNotification(context);
+      return sendTelegramMessage(
+        creds.botToken,
+        creds.chatId,
+        formatted.message,
+        formatted.parseMode
+      );
     })
     .catch((error) => {
       log.error(
@@ -88,7 +147,7 @@ export async function notifyPipelineStarted(
 }
 
 /**
- * Sends a Telegram notification for pipeline completion event
+ * Sends a Telegram notification for pipeline completion event with rich formatting
  * Executes asynchronously without blocking pipeline execution
  */
 export async function notifyPipelineCompleted(
@@ -98,19 +157,27 @@ export async function notifyPipelineCompleted(
   issueTitle?: string | null
 ): Promise<void> {
   // Fire and forget - don't await this
-  getTelegramCredentials(db, companyId)
-    .then((creds) => {
+  Promise.resolve()
+    .then(async () => {
+      const creds = await getTelegramCredentials(db, companyId);
       if (!creds) {
         // Telegram not configured - no-op
         return;
       }
 
-      const message =
-        issueTitle
-          ? `✅ Pipeline completed: ${issueTitle}\n\nPipeline ID: ${pipelineRunId}`
-          : `✅ Pipeline completed\n\nPipeline ID: ${pipelineRunId}`;
+      const context = await getPipelineContext(db, pipelineRunId);
+      // Use provided issueTitle if available (for backward compatibility)
+      if (issueTitle && !context.issueTitle) {
+        context.issueTitle = issueTitle;
+      }
 
-      return sendTelegramMessage(creds.botToken, creds.chatId, message);
+      const formatted = formatPipelineSuccessNotification(context);
+      return sendTelegramMessage(
+        creds.botToken,
+        creds.chatId,
+        formatted.message,
+        formatted.parseMode
+      );
     })
     .catch((error) => {
       log.error(
@@ -121,7 +188,7 @@ export async function notifyPipelineCompleted(
 }
 
 /**
- * Sends a Telegram notification for pipeline failure event
+ * Sends a Telegram notification for pipeline failure event with rich formatting and error details
  * Executes asynchronously without blocking pipeline execution
  */
 export async function notifyPipelineFailed(
@@ -132,36 +199,48 @@ export async function notifyPipelineFailed(
   errorSummary?: string | null
 ): Promise<void> {
   // Fire and forget - don't await this
-  getTelegramCredentials(db, companyId)
-    .then((creds) => {
+  Promise.resolve()
+    .then(async () => {
+      const creds = await getTelegramCredentials(db, companyId);
       if (!creds) {
         // Telegram not configured - no-op
         return;
       }
 
-      let message: string;
-      if (issueTitle) {
-        message = `❌ Pipeline failed: ${issueTitle}\n\nPipeline ID: ${pipelineRunId}`;
-        if (errorSummary) {
-          // Truncate error summary to avoid extremely long messages
-          const truncatedError =
-            errorSummary.length > 200
-              ? `${errorSummary.substring(0, 200)}...`
-              : errorSummary;
-          message += `\n\nError: ${truncatedError}`;
-        }
-      } else {
-        message = `❌ Pipeline failed\n\nPipeline ID: ${pipelineRunId}`;
-        if (errorSummary) {
-          const truncatedError =
-            errorSummary.length > 200
-              ? `${errorSummary.substring(0, 200)}...`
-              : errorSummary;
-          message += `\n\nError: ${truncatedError}`;
+      const context = await getPipelineContext(db, pipelineRunId);
+      // Use provided parameters if available (for backward compatibility)
+      if (issueTitle && !context.issueTitle) {
+        context.issueTitle = issueTitle;
+      }
+      if (errorSummary) {
+        context.errorReason = errorSummary;
+      }
+
+      // Also check if there's an error stored in the pipeline
+      if (!context.errorReason) {
+        try {
+          const pipeline = await db.pipelineRun.findUnique({
+            where: { id: pipelineRunId },
+            select: { lastError: true },
+          });
+          if (pipeline?.lastError) {
+            context.errorReason = pipeline.lastError;
+          }
+        } catch (error) {
+          log.warn(
+            { pipelineRunId, error },
+            "Failed to retrieve lastError from pipeline"
+          );
         }
       }
 
-      return sendTelegramMessage(creds.botToken, creds.chatId, message);
+      const formatted = formatPipelineFailureNotification(context);
+      return sendTelegramMessage(
+        creds.botToken,
+        creds.chatId,
+        formatted.message,
+        formatted.parseMode
+      );
     })
     .catch((error) => {
       log.error(
