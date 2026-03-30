@@ -9,6 +9,7 @@ import { BudgetPage } from './components/pages/budget';
 import { WorkflowsPage } from './components/pages/workflows';
 import { WorkflowDetailPage } from './components/pages/workflow-detail';
 import { ApprovalsPage } from './components/pages/approvals';
+import { SettingsPage } from './components/pages/settings';
 import { startHealthPolling } from './api/health';
 import { connectWebSocket } from './api/socket';
 import { getAppContext } from './api/context';
@@ -24,6 +25,7 @@ getAppContext().then(() => {
   router.addRoute('#/agents',      () => Layout(AgentsPage()));
   router.addRoute('#/queue',       () => Layout(QueuePage()));
   router.addRoute('#/budget',      () => Layout(BudgetPage()));
+  router.addRoute('#/settings',    () => Layout(SettingsPage()));
 
   router.addDynamicRoute('#/workflows/', (id) => Layout(WorkflowDetailPage(id)));
 
