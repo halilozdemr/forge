@@ -24,6 +24,7 @@ import { exportRoutes } from "./routes/export.js";
 import { intakeRoutes } from "./routes/intake.js";
 import { workflowRoutes } from "./routes/workflows.js";
 import { harnessRoutes } from "./routes/harness.js";
+import { telegramRoutes } from "./routes/telegram.js";
 
 
 const log = createChildLogger("server");
@@ -70,6 +71,7 @@ export async function createServer(port = 3131, host = "0.0.0.0") {
   await server.register(intakeRoutes, { prefix: "/v1" });
   await server.register(workflowRoutes, { prefix: "/v1" });
   await server.register(harnessRoutes, { prefix: "/v1" });
+  await server.register(telegramRoutes, { prefix: "/v1" });
 
 
   const __filename = fileURLToPath(import.meta.url);
