@@ -86,9 +86,9 @@ export function SettingsPage() {
 
   async function loadTelegramConfig() {
     try {
-      const context = getAppContext();
+      const context = await getAppContext();
       const response = await fetch(
-        `/v1/telegram/config?companyId=${context().companyId}`
+        `/v1/telegram/config?companyId=${context.companyId}`
       );
 
       if (response.ok) {
@@ -124,12 +124,12 @@ export function SettingsPage() {
     testBtn.textContent = 'Testing...';
 
     try {
-      const context = getAppContext();
+      const context = await getAppContext();
       const response = await fetch('/v1/telegram/test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          companyId: context().companyId,
+          companyId: context.companyId,
           botToken,
           chatId,
         }),
@@ -167,12 +167,12 @@ export function SettingsPage() {
     }
 
     try {
-      const context = getAppContext();
+      const context = await getAppContext();
       const response = await fetch('/v1/telegram/config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          companyId: context().companyId,
+          companyId: context.companyId,
           botToken,
           chatId,
         }),
@@ -182,11 +182,7 @@ export function SettingsPage() {
 
       if (response.ok && data.success) {
         showMessage('Telegram configuration saved successfully', 'success');
-        addToast({
-          title: 'Configuration saved',
-          description: 'Your Telegram settings have been updated',
-          type: 'success',
-        });
+        addToast('Your Telegram settings have been updated', 'success');
         // Reload config display
         loadTelegramConfig();
       } else {
