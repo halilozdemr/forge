@@ -22,7 +22,6 @@ model Company {
   budgetPolicies BudgetPolicy[]
   costEvents     CostEvent[]
   activityLogs   ActivityLog[]
-  skills         Skill[]
   memoryEntries  MemoryEntry[]
   configEntries  ConfigEntry[]
   queueJobs      QueueJob[]
@@ -33,6 +32,7 @@ model Company {
   approvals      Approval[]
   labels         Label[]
   pipelineRuns   PipelineRun[]
+  telegramUsers  TelegramUser[]
 
   @@map("companies")
 }
@@ -82,7 +82,6 @@ model Agent {
   updatedAt     DateTime @updatedAt
 
   company     Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  apiKeys     AgentApiKey[]
   costEvents  CostEvent[]
   assignedIssues Issue[]   @relation("AssignedAgent")
   runtimeState AgentRuntimeState?
@@ -90,21 +89,6 @@ model Agent {
 
   @@unique([companyId, slug])
   @@map("agents")
-}
-
-// 4. Agent API Keys
-model AgentApiKey {
-  id        String    @id @default(cuid())
-  agentId   String
-  keyHash   String    @unique
-  prefix    String
-  lastUsed  DateTime?
-  expiresAt DateTime?
-  createdAt DateTime  @default(now())
-
-  agent Agent @relation(fields: [agentId], references: [id], onDelete: Cascade)
-
-  @@map("agent_api_keys")
 }
 
 // 5. Issues
@@ -135,7 +119,6 @@ model Issue {
   goal          Goal?    @relation(fields: [goalId], references: [id])
   subIssues     Issue[]  @relation("SubIssues")
 
-  skillExecutions SkillExecution[]
   queueJobs       QueueJob[]
   executionWorkspace ExecutionWorkspace?
   comments           IssueComment[]
@@ -279,41 +262,6 @@ model BudgetPolicy {
   @@map("budget_policies")
 }
 
-// 9. Skills
-model Skill {
-  id          String  @id @default(cuid())
-  companyId   String
-  name        String
-  description String
-  content     String
-  version     Int     @default(1)
-  active      Boolean @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  company    Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  executions SkillExecution[]
-
-  @@unique([companyId, name])
-  @@map("skills")
-}
-
-// 10. Skill Executions
-model SkillExecution {
-  id           String  @id @default(cuid())
-  skillId      String
-  issueId      String
-  result       String  @default("failed")
-  errorMessage String?
-  durationMs   Int     @default(0)
-  createdAt    DateTime @default(now())
-
-  skill Skill @relation(fields: [skillId], references: [id], onDelete: Cascade)
-  issue Issue @relation(fields: [issueId], references: [id], onDelete: Cascade)
-
-  @@map("skill_executions")
-}
-
 // 11. Memory Entries
 model MemoryEntry {
   id        String   @id @default(cuid())
@@ -423,21 +371,6 @@ model ScheduledJob {
 
   @@index([enabled, nextRunAt])
   @@map("scheduled_jobs")
-}
-
-// 17. Sync Outbox
-model SyncOutbox {
-  id            String    @id @default(cuid())
-  eventType     String
-  payload       String
-  status        String    @default("pending")
-  attempts      Int       @default(0)
-  lastAttemptAt DateTime?
-  sentAt        DateTime?
-  createdAt     DateTime  @default(now())
-
-  @@index([status, createdAt])
-  @@map("sync_outbox")
 }
 
 // 18. Goals
@@ -629,4 +562,23 @@ model IssueLabel {
 
   @@id([issueId, labelId])
   @@map("issue_labels")
+}
+
+// 22. Telegram User Pairings
+model TelegramUser {
+  id              String   @id @default(cuid())
+  companyId       String
+  forgeUserId     String   // Forge user identifier (email or username)
+  telegramUserId  BigInt   // Telegram user ID from Telegram Bot API
+  telegramUsername String? // Optional: Telegram username for reference
+  pairedAt        DateTime @default(now())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, forgeUserId])
+  @@unique([companyId, telegramUserId])
+  @@index([companyId, createdAt])
+  @@map("telegram_users")
 }

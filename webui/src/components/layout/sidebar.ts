@@ -5,10 +5,9 @@ const NAV_ITEMS = [
   { href: '#/workflows',   label: 'Workflows',  icon: iconWorkflows() },
   { href: '#/approvals',   label: 'Approvals',  icon: iconApprovals() },
   { href: '#/agents',      label: 'Agents',     icon: iconAgents() },
-  { href: '#/issues',      label: 'Issues',     icon: iconIssues() },
-  { href: '#/sprints',     label: 'Sprints',    icon: iconSprints() },
   { href: '#/queue',       label: 'Queue',      icon: iconQueue() },
   { href: '#/budget',      label: 'Budget',     icon: iconBudget() },
+  { href: '#/settings',    label: 'Settings',   icon: iconSettings() },
 ];
 
 export function Sidebar() {
@@ -101,18 +100,6 @@ function iconAgents() {
   </svg>`;
 }
 
-function iconIssues() {
-  return `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" xmlns="http://www.w3.org/2000/svg">
-    <path d="M2 4h12M2 8h8M2 12h5" stroke-linecap="round"/>
-  </svg>`;
-}
-
-function iconSprints() {
-  return `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" xmlns="http://www.w3.org/2000/svg">
-    <circle cx="8" cy="8" r="6"/><path d="M8 4v4l2.5 2.5" stroke-linecap="round"/>
-  </svg>`;
-}
-
 function iconQueue() {
   return `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" xmlns="http://www.w3.org/2000/svg">
     <path d="M2 4h12M2 8h8M2 12h5" stroke-linecap="round"/>
@@ -124,5 +111,13 @@ function iconBudget() {
   return `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" xmlns="http://www.w3.org/2000/svg">
     <circle cx="8" cy="8" r="6"/>
     <path d="M8 4.5v1M8 10.5v1M6 6.5a2 2 0 014 0c0 1.5-2 2-2 3.5" stroke-linecap="round"/>
+  </svg>`;
+}
+
+function iconSettings() {
+  return `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="8" cy="8" r="5.5"/>
+    <path d="M8 5v6M8 8h3M8 8H5" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="8" cy="8" r="1.5" fill="currentColor"/>
   </svg>`;
 }

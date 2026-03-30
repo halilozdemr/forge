@@ -6,13 +6,14 @@ import type { DispatchResult, PipelineStep } from "./index.js";
 import { getHarnessArtifactType, extractStructuredArtifact, validateAndStoreArtifact, assembleHarnessStepContext } from "./harness-artifacts.js";
 import { buildSprintSteps } from "./pipelines/harness.js";
 import type { ProductSpec, EvaluationReport } from "./artifacts.js";
+import { notifyPipelineStarted, notifyPipelineCompleted, notifyPipelineFailed } from "../services/telegram-notifications.js";
 
 const log = createChildLogger("pipeline-dispatcher");
 
 type PipelineStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
 type StepStatus = "pending" | "queued" | "running" | "completed" | "failed" | "cancelled";
 
-function parseDependsOn(value: string): string[] {
+export function parseDependsOn(value: string): string[] {
   try {
     const parsed = JSON.parse(value) as string[];
     return Array.isArray(parsed) ? parsed : [];
@@ -38,7 +39,7 @@ function summarizeResult(result: string, maxLength = 8000): string {
   return `${result.slice(0, maxLength)}...`;
 }
 
-function parseReviewerDecision(output: string): { decision: "APPROVED" | "REJECTED"; issues: string[] } | null {
+export function parseReviewerDecision(output: string): { decision: "APPROVED" | "REJECTED"; issues: string[] } | null {
   // Scan backwards for the last JSON block starting with {"decision"
   const lastIndex = output.lastIndexOf('{"decision"');
   if (lastIndex === -1) return null;
@@ -62,7 +63,7 @@ function parseReviewerDecision(output: string): { decision: "APPROVED" | "REJECT
   }
 }
 
-function getTransitiveDependents(allStepRuns: { stepKey: string; dependsOn: string }[], targetStepKey: string): string[] {
+export function getTransitiveDependents(allStepRuns: { stepKey: string; dependsOn: string }[], targetStepKey: string): string[] {
   const result = new Set<string>();
   const queue = [targetStepKey];
   while (queue.length > 0) {
@@ -185,6 +186,14 @@ export class PipelineDispatcher {
         });
         emit({ type: "issue.updated", issueId: pipelineRun.issueId, status: "in_progress" });
       }
+
+      // Send Telegram notification asynchronously (fire and forget)
+      notifyPipelineStarted(
+        this.db,
+        pipelineRun.companyId,
+        pipelineRun.id,
+        pipelineRun.issue?.title
+      );
     } else if (pipelineRun.stepRuns.every((step) => step.status === "completed")) {
       await this.completePipelineRun(pipelineRun.id);
     }
@@ -387,7 +396,7 @@ export class PipelineDispatcher {
   async handleStepFailure(stepRunId: string, error: string, retryable: boolean): Promise<void> {
     const stepRun = await this.db.pipelineStepRun.findUnique({
       where: { id: stepRunId },
-      include: { pipelineRun: true },
+      include: { pipelineRun: { include: { issue: true } } },
     });
     if (!stepRun) return;
 
@@ -433,6 +442,15 @@ export class PipelineDispatcher {
       });
       emit({ type: "issue.updated", issueId: stepRun.pipelineRun.issueId, status: "failed" });
     }
+
+    // Send Telegram notification asynchronously (fire and forget)
+    notifyPipelineFailed(
+      this.db,
+      stepRun.pipelineRun.companyId,
+      stepRun.pipelineRun.id,
+      stepRun.pipelineRun.issue?.title,
+      error
+    );
   }
 
   async retryStep(pipelineRunId: string, stepKey: string): Promise<string[]> {
@@ -557,17 +575,49 @@ export class PipelineDispatcher {
         inputSnapshot: stepRun.inputSnapshot,
       });
     } else {
-      const dependsOn = parseDependsOn(stepRun.dependsOn);
-      const priorOutputSections = dependsOn
-        .map((key) => {
-          const prior = pipelineRun.stepRuns.find((s) => s.stepKey === key);
-          return prior?.resultSummary ? `## Output from ${key}\n${prior.resultSummary}` : null;
-        })
-        .filter((s): s is string => s !== null);
+      // Collect all completed ancestor summaries by walking dependencies backward.
+      const completedPriors: { key: string; summary: string }[] = [];
+      const visited = new Set<string>();
+      const queue = [...parseDependsOn(stepRun.dependsOn)];
+
+      while (queue.length > 0) {
+        const depKey = queue.shift()!;
+        if (visited.has(depKey)) continue;
+        visited.add(depKey);
+
+        const prior = pipelineRun.stepRuns.find((s) => s.stepKey === depKey);
+        if (prior?.resultSummary) {
+          completedPriors.push({ key: depKey, summary: prior.resultSummary });
+        }
+        if (prior) {
+          for (const ancestor of parseDependsOn(prior.dependsOn)) {
+            if (!visited.has(ancestor)) queue.push(ancestor);
+          }
+        }
+      }
+
+      const PER_STAGE_CAP = 4000;
+      const TOTAL_CAP = 12000;
+      const CLASSIC_CONTEXT_PREFIX = "\n\n---\n";
+      const CLASSIC_SECTION_SEPARATOR = "\n\n";
+      let appendedLength = 0;
+      const priorOutputSections: string[] = [];
+      for (const { key, summary } of completedPriors) {
+        const capped =
+          summary.length > PER_STAGE_CAP
+            ? `${summary.slice(0, PER_STAGE_CAP)}\n[truncated to ${PER_STAGE_CAP} chars]`
+            : summary;
+        const sectionText = `## Output from ${key}\n${capped}`;
+        const separator = priorOutputSections.length === 0 ? CLASSIC_CONTEXT_PREFIX : CLASSIC_SECTION_SEPARATOR;
+        const nextLength = appendedLength + separator.length + sectionText.length;
+        if (nextLength > TOTAL_CAP) break;
+        priorOutputSections.push(sectionText);
+        appendedLength = nextLength;
+      }
 
       enrichedInput =
         priorOutputSections.length > 0
-          ? `${stepRun.inputSnapshot}\n\n---\n${priorOutputSections.join("\n\n")}`
+          ? `${stepRun.inputSnapshot}${CLASSIC_CONTEXT_PREFIX}${priorOutputSections.join(CLASSIC_SECTION_SEPARATOR)}`
           : stepRun.inputSnapshot;
     }
 
@@ -596,6 +646,7 @@ export class PipelineDispatcher {
   private async completePipelineRun(pipelineRunId: string): Promise<void> {
     const pipelineRun = await this.db.pipelineRun.findUnique({
       where: { id: pipelineRunId },
+      include: { issue: true },
     });
     if (!pipelineRun || pipelineRun.status === "completed") return;
 
@@ -620,6 +671,14 @@ export class PipelineDispatcher {
       });
       emit({ type: "issue.updated", issueId: pipelineRun.issueId, status: "done" });
     }
+
+    // Send Telegram notification asynchronously (fire and forget)
+    notifyPipelineCompleted(
+      this.db,
+      pipelineRun.companyId,
+      pipelineRun.id,
+      pipelineRun.issue?.title
+    );
   }
 
   /**

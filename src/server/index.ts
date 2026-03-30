@@ -8,8 +8,6 @@ import { fileURLToPath } from "url";
 import { createChildLogger } from "../utils/logger.js";
 import { registerClient, unregisterClient } from "../events/emitter.js";
 import { healthRoutes } from "./routes/health.js";
-import { completionsRoutes } from "./routes/completions.js";
-import { bridgeRoutes } from "./routes/bridge.js";
 import { agentRoutes } from "./routes/agents.js";
 import { issueRoutes } from "./routes/issues.js";
 import { sprintRoutes } from "./routes/sprints.js";
@@ -26,6 +24,7 @@ import { exportRoutes } from "./routes/export.js";
 import { intakeRoutes } from "./routes/intake.js";
 import { workflowRoutes } from "./routes/workflows.js";
 import { harnessRoutes } from "./routes/harness.js";
+import { telegramRoutes } from "./routes/telegram.js";
 
 
 const log = createChildLogger("server");
@@ -56,8 +55,6 @@ export async function createServer(port = 3131, host = "0.0.0.0") {
 
   // Register routes
   await server.register(healthRoutes);
-  await server.register(completionsRoutes);
-  await server.register(bridgeRoutes);
   await server.register(agentRoutes, { prefix: "/v1" });
   await server.register(issueRoutes, { prefix: "/v1" });
   await server.register(sprintRoutes, { prefix: "/v1" });
@@ -74,6 +71,7 @@ export async function createServer(port = 3131, host = "0.0.0.0") {
   await server.register(intakeRoutes, { prefix: "/v1" });
   await server.register(workflowRoutes, { prefix: "/v1" });
   await server.register(harnessRoutes, { prefix: "/v1" });
+  await server.register(telegramRoutes, { prefix: "/v1" });
 
 
   const __filename = fileURLToPath(import.meta.url);

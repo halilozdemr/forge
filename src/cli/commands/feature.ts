@@ -58,27 +58,34 @@ function printIntakeResult(result: IntakeResult, mode: ExecutionMode, modeSource
 function resolveFeatureTitle(titleArg?: string, titleOpt?: string): string {
   const title = titleOpt?.trim() || titleArg?.trim();
   if (!title) {
-    throw new Error('Feature title is required. Use `forge feature create "..."` or `--title "..."`.');
+    throw new Error('Feature title is required. Use `forge run "..." --type feature`, `forge feature create "..."`, or `--title "..."`.');
   }
   return title;
 }
 
 export function featureCommand(): Command {
   const cmd = new Command("feature")
-    .description("Start and track feature work")
+    .description("Compatibility shortcuts for feature work")
     .addHelpText(
       "after",
       `
-Examples:
+Primary path:
+  forge run "add login screen" --type feature --mode structured
+
+Compatibility shortcuts:
   forge feature create "add login screen"
   forge feature create "add login screen" --mode structured
   forge feature run --title "add login screen" --mode fast
+
+Examples:
+  forge run "add login screen" --type feature --mode structured
+  forge feature create "add login screen"
 `,
     );
 
   cmd
     .command("create")
-    .description("Create a feature request and start work")
+    .description("Compatibility alias to create a feature request and start work")
     .argument("[title]", "Feature title")
     .option("--title <title>", "Feature title (optional if positional title is provided)")
     .option("--description <desc>", "Feature description")
@@ -98,7 +105,7 @@ Examples:
 
   cmd
     .command("run")
-    .description("Start feature work now")
+    .description("Compatibility alias to start feature work now")
     .argument("[title]", "Feature title")
     .option("--title <title>", "Feature title (optional if positional title is provided)")
     .option("--description <desc>", "Feature description")

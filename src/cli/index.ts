@@ -10,9 +10,6 @@ import { issueCommand } from "./commands/issue.js";
 import { sprintCommand } from "./commands/sprint.js";
 import { budgetCommand } from "./commands/budget.js";
 import { heartbeatCommand } from "./commands/heartbeat.js";
-import { companyCommand } from "./commands/company.js";
-import { loginCommand } from "./commands/login.js";
-import { logoutCommand } from "./commands/logout.js";
 import { queueCommand } from "./commands/queue.js";
 import { goalCommand } from "./commands/goal.js";
 import { secretCommand } from "./commands/secret.js";
@@ -24,6 +21,7 @@ import { logsCommand } from "./commands/logs.js";
 import { workflowCommand } from "./commands/workflow.js";
 import { featureCommand } from "./commands/feature.js";
 import { bugCommand } from "./commands/bug.js";
+import { runCommand } from "./commands/run.js";
 
 const program = new Command("forge");
 
@@ -37,8 +35,8 @@ program
 Quick start:
   forge init
   forge start
-  forge feature create "add login screen" --mode structured
-  forge bug create "fix crash on launch" --mode fast
+  forge run "add login screen" --type feature
+  forge run "fix crash on launch" --type bug --mode fast
 `,
   );
 
@@ -52,9 +50,6 @@ program.addCommand(issueCommand());
 program.addCommand(sprintCommand());
 program.addCommand(budgetCommand());
 program.addCommand(heartbeatCommand());
-program.addCommand(companyCommand());
-program.addCommand(loginCommand());
-program.addCommand(logoutCommand());
 program.addCommand(queueCommand());
 program.addCommand(goalCommand());
 program.addCommand(secretCommand());
@@ -64,6 +59,7 @@ program.addCommand(exportCommand());
 program.addCommand(importCommand());
 program.addCommand(logsCommand());
 program.addCommand(workflowCommand());
+program.addCommand(runCommand());
 program.addCommand(featureCommand());
 program.addCommand(bugCommand());
 

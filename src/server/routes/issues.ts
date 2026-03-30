@@ -199,44 +199,6 @@ export async function issueRoutes(server: FastifyInstance) {
     return { issue };
   });
 
-  // POST /v1/issues/:id/run
-  server.post<{
-    Params: { id: string };
-    Body: { companyId: string; agentSlug?: string; input?: string };
-  }>("/issues/:id/run", async (request, reply) => {
-    const issue = await db.issue.findUnique({
-      where: { id: request.params.id },
-      include: { assignedAgent: true },
-    });
-    if (!issue) return reply.code(404).send({ error: "Issue not found" });
-
-    const agentSlug = request.body.agentSlug ?? issue.assignedAgent?.slug;
-    if (!agentSlug) {
-      return reply.code(400).send({ error: "No agent assigned to issue and no override provided." });
-    }
-
-    const agent = await db.agent.findFirst({
-      where: { companyId: request.body.companyId, slug: agentSlug }
-    });
-    if (!agent) {
-      return reply.code(404).send({ error: "Agent not found" });
-    }
-
-    const { enqueueAgentJob } = await import("../../bridge/queue.js");
-    const jobId = await enqueueAgentJob({
-      companyId: request.body.companyId,
-      agentSlug: agent.slug,
-      agentId: agent.id,
-      issueId: issue.id,
-      input: request.body.input ?? `Execute issue: ${issue.title}\n\n${issue.description ?? ""}`,
-      projectPath: issue.projectId
-        ? (await db.project.findUnique({ where: { id: issue.projectId } }))?.path
-        : undefined,
-    });
-
-    return { jobId };
-  });
-
   // GET /v1/issues/:id/comments
   server.get<{ Params: { id: string } }>("/issues/:id/comments", async (request, reply) => {
     const comments = await db.issueComment.findMany({

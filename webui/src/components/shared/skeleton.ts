@@ -24,17 +24,3 @@ export function SkeletonCard(): HTMLElement {
   `;
   return el;
 }
-
-export function SkeletonIssueCard(): HTMLElement {
-  const el = document.createElement('div');
-  el.className = 'card issue-card';
-  el.innerHTML = `
-    <div style="display:flex; justify-content:space-between; margin-bottom:8px">
-      <div class="skeleton skeleton-badge"></div>
-      <div class="skeleton" style="height:11px; width:30px; border-radius:3px"></div>
-    </div>
-    <div class="skeleton skeleton-text" style="margin-bottom:6px"></div>
-    <div class="skeleton skeleton-text" style="width:70%"></div>
-  `;
-  return el;
-}

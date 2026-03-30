@@ -13,7 +13,7 @@ export async function fetchHealth() {
     console.error('Failed to fetch health:', error);
     healthStore.set({
       status: 'down',
-      components: { db: false, redis: false, worker: false }
+      components: { db: false, worker: false }
     });
   }
 }

@@ -51,8 +51,8 @@ export function workflowCommand(): Command {
       `
 Use this command group to inspect progress.
 To start new work, use:
-  forge feature create "add login screen" --mode structured
-  forge bug create "fix crash on launch" --mode fast
+  forge run "add login screen" --type feature --mode structured
+  forge run "fix crash on launch" --type bug --mode fast
 `,
     );
 

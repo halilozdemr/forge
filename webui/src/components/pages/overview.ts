@@ -31,14 +31,13 @@ export function OverviewPage() {
     }
     const s = status.status;
     const color = s === 'healthy' ? 'green' : s === 'degraded' ? 'amber' : 'red';
-    const c = status.components ?? { db: false, redis: false, worker: false };
+    const c = status.components ?? { db: false, worker: false };
     healthCard.innerHTML = `
       <div class="stat-icon" style="background:var(--${color}-subtle);color:var(--${color})">⚡</div>
       <div class="stat-label">System Health</div>
       <div class="stat-value" style="font-size:1.4rem;color:var(--${color})">${s}</div>
       <div class="health-details">
         <div class="health-item"><span>Database</span><span class="badge badge-${c.db?'green':'red'}">${c.db?'OK':'DOWN'}</span></div>
-        <div class="health-item"><span>Redis</span><span class="badge badge-${c.redis?'green':'red'}">${c.redis?'OK':'DOWN'}</span></div>
         <div class="health-item"><span>Worker</span><span class="badge badge-${c.worker?'green':'red'}">${c.worker?'OK':'DOWN'}</span></div>
       </div>
     `;

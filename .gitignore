@@ -32,3 +32,6 @@ webui/dist/
 # Logs
 *.log
 logs/
+
+# Forge secrets
+.forge/config.json

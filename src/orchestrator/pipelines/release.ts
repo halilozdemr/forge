@@ -35,6 +35,8 @@ export function buildReleasePipeline(opts: {
       agentSlug: "quality-guard",
       input: `Validate release work_result artifacts against execution_brief and architecture_plan. The prior stage outputs are provided below.\n\n${context}`,
       dependsOn: ["builder"],
+      loopsBackTo: "builder",
+      maxRevisions: 2,
     },
     {
       key: "devops",
