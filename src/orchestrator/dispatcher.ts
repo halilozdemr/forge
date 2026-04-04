@@ -372,6 +372,10 @@ export class PipelineDispatcher {
 
     // Harness sprint outcome required human input — do not auto-advance to next sprint.
     if (harnessAdvancePaused) {
+      await this.db.pipelineRun.update({
+        where: { id: stepRun.pipelineRunId },
+        data: { status: "approval_pending" },
+      });
       log.info(
         { pipelineRunId: stepRun.pipelineRunId, stepKey: stepRun.stepKey },
         "Harness sprint outcome requires human gate — pipeline advancement paused",

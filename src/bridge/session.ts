@@ -101,9 +101,10 @@ export async function rotateSession(agentId: string, issueId?: string): Promise<
       data: { sessionId: newSessionId, runCount: 0, tokenCount: 0 },
     }),
     ...(issueId ? [
-      db.agentTaskSession.update({
+      db.agentTaskSession.upsert({
         where: { agentId_issueId: { agentId, issueId } },
-        data: { sessionId: newSessionId },
+        create: { agentId, issueId, sessionId: newSessionId },
+        update: { sessionId: newSessionId, closedAt: null },
       })
     ] : []),
   ]);
