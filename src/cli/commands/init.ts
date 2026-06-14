@@ -11,7 +11,6 @@ import { intro, outro, text, confirm, select, p } from "../prompts.js";
 import { loadConfig } from "../../utils/config.js";
 import { createChildLogger } from "../../utils/logger.js";
 import { PROVIDER_PRESETS, ProviderStrategy } from "../../db/seed.js";
-import { syncProjectOpenCodeConfig } from "../../opencode/project-config.js";
 
 const log = createChildLogger("init");
 
@@ -688,10 +687,7 @@ async function runInit(opts: { yes?: boolean }): Promise<void> {
     };
     await writeFile(join(forgeDir, "config.json"), JSON.stringify(forgeConfig, null, 2));
 
-    // 5. Project-local OpenCode overrides
-    await syncProjectOpenCodeConfig(forgeConfig);
-
-    // 6. .env entries
+    // 5. .env entries
     const envPath = join(absProjectPath, ".env");
     const envLines: string[] = [];
     if (openrouterKey && !process.env.OPENROUTER_API_KEY) envLines.push(`OPENROUTER_API_KEY=${openrouterKey}`);

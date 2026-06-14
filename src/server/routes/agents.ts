@@ -3,7 +3,6 @@ import { getDb } from "../../db/client.js";
 import { transitionAgent } from "../../agents/lifecycle.js";
 import { buildHierarchy, formatHierarchy, getEscalationChain } from "../../agents/hierarchy.js";
 import { isSupportedModelProvider, isValidModel } from "../../agents/validation.js";
-import { syncProjectClientProjectionsFromRegistry } from "../../opencode/project-config.js";
 import { buildDefaultClientConfigForSlug, isOfficialAgentSlug } from "../../agents/constants.js";
 
 const EDITABLE_STATUSES = new Set(["idle", "active", "paused", "terminated"]);
@@ -170,11 +169,6 @@ export async function agentRoutes(server: FastifyInstance) {
     await db.activityLog.create({
       data: { companyId, actor: "user", action: "agent.hired", resource: `agent:${slug}` },
     });
-
-    const project = await db.project.findFirst({ where: { companyId }, orderBy: { createdAt: "asc" } });
-    if (project) {
-      await syncProjectClientProjectionsFromRegistry({ db, companyId, projectPath: project.path });
-    }
 
     return { agent };
   });
@@ -368,11 +362,6 @@ export async function agentRoutes(server: FastifyInstance) {
       where: { companyId_slug: { companyId: normalizedCompanyId, slug } },
     });
 
-    const project = await db.project.findFirst({ where: { companyId: normalizedCompanyId }, orderBy: { createdAt: "asc" } });
-    if (project) {
-      await syncProjectClientProjectionsFromRegistry({ db, companyId: normalizedCompanyId, projectPath: project.path });
-    }
-
     return { agent };
   });
 
@@ -463,11 +452,6 @@ export async function agentRoutes(server: FastifyInstance) {
       data: config,
     });
 
-    const project = await db.project.findFirst({ where: { companyId }, orderBy: { createdAt: "asc" } });
-    if (project) {
-      await syncProjectClientProjectionsFromRegistry({ db, companyId, projectPath: project.path });
-    }
-
     return { agent: updatedAgent, message: `Rolled back to revision ${revision}` };
   });
 
@@ -488,11 +472,6 @@ export async function agentRoutes(server: FastifyInstance) {
     await db.activityLog.create({
       data: { companyId, actor: "user", action: "agent.deleted", resource: `agent:${slug}` },
     });
-
-    const project = await db.project.findFirst({ where: { companyId }, orderBy: { createdAt: "asc" } });
-    if (project) {
-      await syncProjectClientProjectionsFromRegistry({ db, companyId, projectPath: project.path });
-    }
 
     return { message: `Agent "${slug}" deleted` };
   });

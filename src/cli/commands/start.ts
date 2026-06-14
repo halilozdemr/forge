@@ -13,7 +13,6 @@ import { createServer } from "../../server/index.js";
 import { createAgentWorker, closeWorker } from "../../bridge/worker.js";
 import { getQueue, closeQueue } from "../../bridge/queue.js";
 import { startHeartbeatScheduler, stopHeartbeatScheduler } from "../../heartbeat/scheduler.js";
-import { syncProjectOpenCodeConfig, syncProjectClientProjectionsFromRegistry } from "../../opencode/project-config.js";
 import { startForgeConsoleShell } from "../console/shell.js";
 
 const log = createChildLogger("start");
@@ -105,7 +104,6 @@ async function runStart(opts: {
         process.env.ANTHROPIC_API_KEY = forgeConfig.providers.anthropicApi.apiKey;
       }
 
-      await syncProjectOpenCodeConfig(forgeConfig);
     } catch (err) {
       log.warn({ err }, "Failed to read .forge/config.json — using defaults");
     }
@@ -118,11 +116,6 @@ async function runStart(opts: {
     const db = getDb();
     const seeded = await seedDatabase(db, seedOptions);
     seededCompanyId = seeded.companyId;
-    await syncProjectClientProjectionsFromRegistry({
-      db,
-      companyId: seeded.companyId,
-      projectPath: seedOptions.projectPath,
-    });
   } catch (err) {
     log.warn({ err }, "Failed to seed database — continuing");
   }
