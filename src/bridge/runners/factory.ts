@@ -9,6 +9,7 @@ import { OllamaRunner } from "./ollama.js";
 import { ProcessRunner } from "./process.js";
 import { HttpRunner } from "./http.js";
 import { CursorRunner } from "./cursor.js";
+import { MODEL_PROVIDERS } from "./providers.js";
 import type { AgentRunner } from "./types.js";
 
 const runners = new Map<string, AgentRunner>();
@@ -55,7 +56,7 @@ export function createRunner(modelProvider: string): AgentRunner {
       runner = new CursorRunner();
       break;
     default:
-      throw new Error(`Unknown model provider: ${modelProvider}. Supported: claude-cli, openrouter, anthropic-api, gemini-cli, gemini-api, codex-cli, opencode-cli, ollama, process, http, cursor`);
+      throw new Error(`Unknown model provider: ${modelProvider}. Supported: ${MODEL_PROVIDERS.join(", ")}`);
   }
 
   runners.set(modelProvider, runner);

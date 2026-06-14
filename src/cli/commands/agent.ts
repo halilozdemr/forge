@@ -295,13 +295,17 @@ export function agentCommand(): Command {
 
         if (!provider) {
           provider = await select({
-            message: "Model Provider:",
+            message: "Model Provider (backend this agent runs on):",
             options: [
-              { value: "claude-cli", label: "Claude CLI" },
-              { value: "anthropic-api", label: "Anthropic API" },
-              { value: "openrouter", label: "OpenRouter" },
+              { value: "claude-cli", label: "Claude Code CLI" },
               { value: "gemini-cli", label: "Gemini CLI" },
-              { value: "codex-cli", label: "Codex CLI" }
+              { value: "codex-cli", label: "Codex CLI" },
+              { value: "opencode-cli", label: "opencode CLI" },
+              { value: "ollama", label: "Ollama (local endpoint)" },
+              { value: "anthropic-api", label: "Anthropic API" },
+              { value: "gemini-api", label: "Gemini API" },
+              { value: "openrouter", label: "OpenRouter API" },
+              { value: "cursor", label: "Cursor (HTTP endpoint)" }
             ]
           });
         }

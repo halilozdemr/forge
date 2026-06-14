@@ -1,20 +1,14 @@
+import { MODEL_PROVIDERS, isSupportedModelProvider } from "../bridge/runners/providers.js";
+
 const MODEL_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/;
 
-export const SUPPORTED_MODEL_PROVIDERS = [
-  "claude-cli",
-  "openrouter",
-  "anthropic-api",
-  "codex-cli",
-  "opencode-cli",
-  "gemini-cli",
-] as const;
+/**
+ * Supported providers derive from the runner factory's canonical list, so any
+ * backend with a runner can be assigned to an agent (no validation/factory drift).
+ */
+export const SUPPORTED_MODEL_PROVIDERS = MODEL_PROVIDERS;
 
-const SUPPORTED_MODEL_PROVIDER_SET = new Set<string>(SUPPORTED_MODEL_PROVIDERS);
-
-/** Validates whether the provider is one of the supported model providers. */
-export function isSupportedModelProvider(provider: string): boolean {
-  return SUPPORTED_MODEL_PROVIDER_SET.has(provider.trim());
-}
+export { isSupportedModelProvider };
 
 /** Validates model format used by Forge agent definitions. */
 export function isValidModel(model: string): boolean {
