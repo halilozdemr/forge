@@ -1,21 +1,36 @@
 # Runner providers
 
-Each agent can be configured with a different provider and model. Set via `.forge/config.json` (created by `forge init`) or live with `forge agent edit --provider`.
+Each agent (pipeline stage) can be configured with a different provider and model. Set via `.forge/config.json` (created by `forge init`), live per-stage with `forge route set`, or per-agent with `forge agent edit --provider`.
+
+The canonical list of backends Forge can dispatch to lives in `src/bridge/runners/providers.ts`; the runner factory, agent validation, and the `forge route` command all derive from it, so the set below is always exactly what the conductor can run.
 
 ## Available providers
 
-| Provider | Value | Notes |
-|---|---|---|
-| Claude Code CLI | `claude-cli` | Default. $0 cost — uses your existing Claude subscription. |
-| Anthropic API | `anthropic-api` | Direct API calls. Token costs tracked per job. |
-| OpenRouter | `openrouter` | Access to many models. Costs tracked. |
-| Gemini CLI | `gemini-cli` | Local Gemini CLI. |
-| Gemini API | `gemini-api` | Direct Gemini API. |
-| Codex CLI | `codex-cli` | OpenAI Codex CLI. |
-| opencode CLI | `opencode-cli` | opencode.ai integration. |
-| Ollama | `ollama` | Local models via Ollama. |
-| HTTP | `http` | Generic HTTP endpoint. |
-| Process | `process` | Arbitrary shell process. |
+| Provider | Value | Routable | Notes |
+|---|---|---|---|
+| Claude Code CLI | `claude-cli` | yes | Default. $0 cost — uses your existing Claude subscription. |
+| Anthropic API | `anthropic-api` | yes | Direct API calls. Token costs tracked per job. |
+| OpenRouter | `openrouter` | yes | Access to many models. Costs tracked. |
+| OpenAI API | `openai` | yes | Chat Completions. `OPENAI_BASE_URL` override for compatible gateways. |
+| Gemini CLI | `gemini-cli` | yes | Local Gemini CLI. |
+| Gemini API | `gemini-api` | yes | Direct Gemini API. |
+| Codex CLI | `codex-cli` | yes | OpenAI Codex CLI. |
+| opencode CLI | `opencode-cli` | yes | opencode.ai integration. |
+| Ollama | `ollama` | yes | Local models via Ollama. |
+| Cursor Agent | `cursor` | yes | HTTP agent adapter (localhost:11000). |
+| HTTP | `http` | no | Generic HTTP endpoint (internal bridge). |
+| Process | `process` | no | Arbitrary shell process (internal bridge). |
+
+Non-routable backends are runnable plumbing but are not offered as routing targets by `forge route`.
+
+## Inspecting and changing routing
+
+```bash
+forge route                # stage -> provider/model table with backend availability
+forge route providers      # routable backends and whether each is currently reachable
+forge route set <stage> --provider <id> [--model <m>]
+forge route preset [name]  # list or apply a heavy/light preset (--dry-run to preview)
+```
 
 ## Cost tracking
 

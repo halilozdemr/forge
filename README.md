@@ -167,6 +167,14 @@ forge agent edit <slug> --company <id> --status paused
 forge agent hire [slug]
 forge agent fire <slug>
 
+# Provider routing (per-stage backend assignment)
+forge route                                   # stage -> provider/model table + backend availability
+forge route providers                         # routable backends and whether each is reachable
+forge route set architect --provider anthropic-api --model claude-sonnet-4-6
+forge route set builder --provider ollama     # model defaults to the provider's default
+forge route preset                            # list heavy/light presets
+forge route preset claude-cli+openrouter      # apply a preset across all stages (use --dry-run to preview)
+
 # Budget
 forge budget show
 forge budget set <limitUsd> [--agent <slug>]
