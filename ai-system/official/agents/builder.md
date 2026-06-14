@@ -2,7 +2,7 @@
 id: builder
 name: Builder
 description: "Stage-3 implementation from execution brief and architecture plan."
-model: openrouter/deepseek/deepseek-v3-0324:free
+model: bridge/claude-cli-sonnet
 mode: subagent
 temperature: 0
 reportsTo: null

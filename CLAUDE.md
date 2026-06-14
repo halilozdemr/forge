@@ -14,7 +14,7 @@ Forge is a local-first AI orchestration runtime for software work. You submit a 
 
 ## Primary Surfaces
 
-- TUI console (primary): `forge start`
+- TUI console (primary): `forge start` — rendered with Ink (React) by default. Set `FORGE_TUI=legacy` to fall back to the original hand-rolled ANSI shell.
 - MCP server (integration surface): `forge-mcp` / `npm run mcp`
 - Web dashboard (secondary, read-heavy monitoring): `http://localhost:3131`
 

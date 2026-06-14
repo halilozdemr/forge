@@ -2,7 +2,7 @@
 id: retrospective-analyst
 name: Retrospective Analyst
 description: "Optional post-run learning artifact stage."
-model: openrouter/deepseek/deepseek-v3-0324:free
+model: bridge/claude-cli-sonnet
 mode: subagent
 temperature: 0
 reportsTo: null

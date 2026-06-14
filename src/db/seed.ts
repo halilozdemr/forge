@@ -11,7 +11,11 @@ import {
 
 const log = createChildLogger("seed");
 // Tier definitions: architect/quality checks are heavy, other official stages are light.
-const HEAVY_AGENTS = ["architect", "quality-guard"];
+// Agents whose output quality most directly determines pipeline results run on
+// the "heavy" model tier regardless of provider strategy. The builder writes the
+// actual code and the intake-gate produces the execution brief that every
+// downstream stage depends on, so both belong here alongside design/review.
+const HEAVY_AGENTS = ["intake-gate", "architect", "builder", "quality-guard"];
 
 export interface ProviderStrategy {
   heavy: { provider: string; model: string };

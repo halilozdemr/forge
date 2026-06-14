@@ -198,28 +198,28 @@ describe("PipelineDispatcher", () => {
           id: "step-a",
           stepKey: "A",
           status: "completed",
-          resultSummary: "A".repeat(5000),
+          resultSummary: "A".repeat(8000),
         }),
         makeStepRun({
           id: "step-b",
           stepKey: "B",
           status: "completed",
           dependsOn: JSON.stringify(["A"]),
-          resultSummary: "B".repeat(5000),
+          resultSummary: "B".repeat(8000),
         }),
         makeStepRun({
           id: "step-c",
           stepKey: "C",
           status: "completed",
           dependsOn: JSON.stringify(["B"]),
-          resultSummary: "C".repeat(5000),
+          resultSummary: "C".repeat(8000),
         }),
         makeStepRun({
           id: "step-d",
           stepKey: "D",
           status: "completed",
           dependsOn: JSON.stringify(["C"]),
-          resultSummary: "D".repeat(5000),
+          resultSummary: "D".repeat(8000),
         }),
         makeStepRun({
           id: "step-e",
@@ -237,14 +237,16 @@ describe("PipelineDispatcher", () => {
     await expect(dispatcher.enqueueEligibleSteps("pipe-1")).resolves.toEqual(["E"]);
 
     const queuedInput = enqueueAgentJobMock.mock.calls[0][0].input as string;
+    // Nearest deps fit within the total cap; the farthest (A) is dropped.
     expect(queuedInput).toContain("## Output from D\n");
     expect(queuedInput).toContain("## Output from C\n");
     expect(queuedInput).not.toContain("## Output from B\n");
     expect(queuedInput).not.toContain("## Output from A\n");
-    expect(queuedInput).toContain("[truncated to 4000 chars]");
-    expect(queuedInput.match(/\[truncated to 4000 chars\]/g)?.length).toBe(2);
-    expect(queuedInput).toContain("D".repeat(4000));
-    expect(queuedInput).not.toContain("D".repeat(4001));
+    // Each oversized summary (8000 > 6000 per-stage cap) is condensed, not dropped:
+    // the two included sections (D and C) both carry the elision marker.
+    expect(queuedInput.match(/elided to fit context budget/g)?.length).toBe(2);
+    // Condensation preserves both ends but breaks the original contiguous run.
+    expect(queuedInput).not.toContain("D".repeat(8000));
   });
 
   it("enforces total cap using full injected section text (including headers/separators)", async () => {
@@ -266,21 +268,21 @@ describe("PipelineDispatcher", () => {
           stepKey: "B",
           status: "completed",
           dependsOn: JSON.stringify(["A"]),
-          resultSummary: "B".repeat(4000),
+          resultSummary: "B".repeat(6000),
         }),
         makeStepRun({
           id: "step-c",
           stepKey: "C",
           status: "completed",
           dependsOn: JSON.stringify(["B"]),
-          resultSummary: "C".repeat(4000),
+          resultSummary: "C".repeat(6000),
         }),
         makeStepRun({
           id: "step-d",
           stepKey: "D",
           status: "completed",
           dependsOn: JSON.stringify(["C"]),
-          resultSummary: "D".repeat(4000),
+          resultSummary: "D".repeat(6000),
         }),
         makeStepRun({
           id: "step-e",
@@ -306,7 +308,7 @@ describe("PipelineDispatcher", () => {
     const delimiterIndex = queuedInput.indexOf(delimiter);
     expect(delimiterIndex).toBeGreaterThanOrEqual(0);
     const appendedContext = queuedInput.slice(delimiterIndex);
-    expect(appendedContext.length).toBeLessThanOrEqual(12000);
+    expect(appendedContext.length).toBeLessThanOrEqual(16000);
   });
 
   it("marks step, pipeline, and issue as failed on non-retryable error", async () => {

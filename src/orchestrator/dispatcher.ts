@@ -39,6 +39,24 @@ function summarizeResult(result: string, maxLength = 8000): string {
   return `${result.slice(0, maxLength)}...`;
 }
 
+/**
+ * Condense an upstream stage output to fit a budget while preserving both ends.
+ *
+ * Agents emit a prose summary up front and their structured output contract
+ * (the JSON block downstream stages actually parse) at the very end. A naive
+ * head-only truncation drops that trailing contract, so we keep a head and a
+ * tail slice and mark the elided middle.
+ */
+function condenseSummary(text: string, cap: number): string {
+  if (text.length <= cap) return text;
+  const headLen = Math.floor(cap * 0.6);
+  const tailLen = cap - headLen;
+  const head = text.slice(0, headLen).trimEnd();
+  const tail = text.slice(text.length - tailLen).trimStart();
+  const omitted = text.length - head.length - tail.length;
+  return `${head}\n\n[… ${omitted} chars elided to fit context budget …]\n\n${tail}`;
+}
+
 export function parseReviewerDecision(output: string): { decision: "APPROVED" | "REJECTED"; issues: string[] } | null {
   // Scan backwards for the last JSON block starting with {"decision"
   const lastIndex = output.lastIndexOf('{"decision"');
@@ -600,17 +618,14 @@ export class PipelineDispatcher {
         }
       }
 
-      const PER_STAGE_CAP = 4000;
-      const TOTAL_CAP = 12000;
+      const PER_STAGE_CAP = 6000;
+      const TOTAL_CAP = 16000;
       const CLASSIC_CONTEXT_PREFIX = "\n\n---\n";
       const CLASSIC_SECTION_SEPARATOR = "\n\n";
       let appendedLength = 0;
       const priorOutputSections: string[] = [];
       for (const { key, summary } of completedPriors) {
-        const capped =
-          summary.length > PER_STAGE_CAP
-            ? `${summary.slice(0, PER_STAGE_CAP)}\n[truncated to ${PER_STAGE_CAP} chars]`
-            : summary;
+        const capped = condenseSummary(summary, PER_STAGE_CAP);
         const sectionText = `## Output from ${key}\n${capped}`;
         const separator = priorOutputSections.length === 0 ? CLASSIC_CONTEXT_PREFIX : CLASSIC_SECTION_SEPARATOR;
         const nextLength = appendedLength + separator.length + sectionText.length;

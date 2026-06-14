@@ -2,7 +2,7 @@
 id: devops
 name: DevOps
 description: "Optional operational stage for readiness/release artifacts."
-model: openrouter/deepseek/deepseek-v3-0324:free
+model: bridge/claude-cli-sonnet
 mode: subagent
 temperature: 0
 reportsTo: null

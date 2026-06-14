@@ -2,7 +2,7 @@
 id: intake-gate
 name: Intake Gate
 description: "Stage-1 official intake normalization and execution brief creation."
-model: openrouter/deepseek/deepseek-v3-0324:free
+model: bridge/claude-cli-sonnet
 mode: subagent
 temperature: 0
 reportsTo: null

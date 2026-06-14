@@ -15,6 +15,7 @@ import { getQueue, closeQueue } from "../../bridge/queue.js";
 import { startHeartbeatScheduler, stopHeartbeatScheduler } from "../../heartbeat/scheduler.js";
 import { syncProjectOpenCodeConfig, syncProjectClientProjectionsFromRegistry } from "../../opencode/project-config.js";
 import { startForgeConsoleShell } from "../console/shell.js";
+import { startForgeInkConsole } from "../console/ink/index.js";
 
 const log = createChildLogger("start");
 
@@ -161,7 +162,12 @@ async function runStart(opts: {
     return;
   }
 
-  stopConsoleShell = await startForgeConsoleShell({
+  // The Ink (React) console is the default renderer. Set FORGE_TUI=legacy to
+  // fall back to the original hand-rolled ANSI shell.
+  const useLegacyConsole = (process.env.FORGE_TUI ?? "").toLowerCase() === "legacy";
+  const startConsole = useLegacyConsole ? startForgeConsoleShell : startForgeInkConsole;
+
+  stopConsoleShell = await startConsole({
     port: config.port,
     initialCompanyId: seededCompanyId,
     onRequestShutdown: () => {
