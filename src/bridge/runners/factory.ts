@@ -1,5 +1,6 @@
 import { ClaudeCliRunner } from "./claude-cli.js";
 import { OpenRouterRunner } from "./openrouter.js";
+import { OpenAIRunner } from "./openai.js";
 import { AnthropicApiRunner } from "./anthropic-api.js";
 import { GeminiCliRunner } from "./gemini-cli.js";
 import { GeminiApiRunner } from "./gemini-api.js";
@@ -27,6 +28,9 @@ export function createRunner(modelProvider: string): AgentRunner {
       break;
     case "openrouter":
       runner = new OpenRouterRunner();
+      break;
+    case "openai":
+      runner = new OpenAIRunner();
       break;
     case "anthropic-api":
       runner = new AnthropicApiRunner();

@@ -56,7 +56,10 @@ describe("providerAvailability", () => {
   });
 
   it("flags unknown providers as missing", () => {
-    expect(providerAvailability("openai", emptyProbe).status).toBe("missing");
+    expect(providerAvailability("vertex-ai", emptyProbe)).toEqual({
+      status: "missing",
+      detail: "unknown provider",
+    });
   });
 });
 
@@ -77,7 +80,7 @@ describe("resolveRouteAssignment", () => {
 
   it("rejects internal bridges and unknown providers", () => {
     expect(() => resolveRouteAssignment("process")).toThrow(/internal bridge/);
-    expect(() => resolveRouteAssignment("openai")).toThrow(/not a known provider/);
+    expect(() => resolveRouteAssignment("vertex-ai")).toThrow(/not a known provider/);
   });
 });
 
@@ -103,7 +106,7 @@ describe("resolvePresetAssignments", () => {
 
   it("rejects presets that reference an unrunnable provider", () => {
     const broken = {
-      heavy: { provider: "openai", model: "gpt-4o" },
+      heavy: { provider: "vertex-ai", model: "gemini-pro" },
       light: { provider: "openrouter", model: "x" },
     };
     expect(() => resolvePresetAssignments(broken, agents, [])).toThrow(/not a routable provider/);
@@ -120,7 +123,7 @@ describe("presetIsApplicable", () => {
     ).toBe(true);
     expect(
       presetIsApplicable({
-        heavy: { provider: "openai", model: "gpt-4o" },
+        heavy: { provider: "vertex-ai", model: "gemini-pro" },
         light: { provider: "openrouter", model: "x" },
       }),
     ).toBe(false);

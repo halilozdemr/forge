@@ -21,6 +21,7 @@ describe("model provider registry", () => {
     const factoryProviders = [
       "claude-cli",
       "openrouter",
+      "openai",
       "anthropic-api",
       "gemini-cli",
       "gemini-api",
@@ -37,7 +38,7 @@ describe("model provider registry", () => {
   it("recognises known providers and rejects unknown ones", () => {
     expect(isKnownProvider("gemini-api")).toBe(true);
     expect(isKnownProvider("  ollama  ")).toBe(true);
-    expect(isKnownProvider("openai")).toBe(false);
+    expect(isKnownProvider("vertex-ai")).toBe(false);
     expect(isKnownProvider("nonsense")).toBe(false);
   });
 
@@ -56,7 +57,7 @@ describe("model provider registry", () => {
       expect(defaultModelFor(provider.id)).toBeTruthy();
       expect(getProvider(provider.id)).toBe(provider);
     }
-    expect(defaultModelFor("openai")).toBeUndefined();
+    expect(defaultModelFor("vertex-ai")).toBeUndefined();
   });
 
   it("declares an availability signal for every routable provider", () => {

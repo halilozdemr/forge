@@ -62,6 +62,14 @@ export const MODEL_PROVIDERS: ProviderDescriptor[] = [
     apiKeyEnv: "OPENROUTER_API_KEY",
   },
   {
+    id: "openai",
+    label: "OpenAI API",
+    kind: "api",
+    defaultModel: "gpt-4o",
+    routable: true,
+    apiKeyEnv: "OPENAI_API_KEY",
+  },
+  {
     id: "gemini-cli",
     label: "Gemini CLI",
     kind: "cli",
