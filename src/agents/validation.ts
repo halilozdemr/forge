@@ -1,19 +1,16 @@
+import { MODEL_PROVIDER_IDS, isKnownProvider } from "../bridge/runners/providers.js";
+
 const MODEL_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/;
 
-export const SUPPORTED_MODEL_PROVIDERS = [
-  "claude-cli",
-  "openrouter",
-  "anthropic-api",
-  "codex-cli",
-  "opencode-cli",
-  "gemini-cli",
-] as const;
-
-const SUPPORTED_MODEL_PROVIDER_SET = new Set<string>(SUPPORTED_MODEL_PROVIDERS);
+/**
+ * Supported model providers, derived from the single-source runner registry so
+ * validation can never drift from what the factory is actually able to run.
+ */
+export const SUPPORTED_MODEL_PROVIDERS = MODEL_PROVIDER_IDS;
 
 /** Validates whether the provider is one of the supported model providers. */
 export function isSupportedModelProvider(provider: string): boolean {
-  return SUPPORTED_MODEL_PROVIDER_SET.has(provider.trim());
+  return isKnownProvider(provider);
 }
 
 /** Validates model format used by Forge agent definitions. */
