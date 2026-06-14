@@ -242,3 +242,24 @@ export function formatRouteTable(rows: RouteRow[], probe: ProviderProbe): string
   }
   return lines;
 }
+
+/**
+ * Decision for a mutating route command that may need user confirmation.
+ * - `apply`:  proceed without prompting (`--yes`, or no destructive change).
+ * - `prompt`: ask the user interactively before writing.
+ * - `abort`:  refuse — non-interactive (no TTY) and `--yes` was not passed.
+ */
+export type ConfirmDecision = "apply" | "prompt" | "abort";
+
+/**
+ * Gate a bulk/destructive route write. Passing `--yes` always applies; an
+ * interactive TTY prompts; a non-interactive session without `--yes` aborts so
+ * scripts fail loudly instead of silently rewriting every stage.
+ */
+export function resolveConfirmDecision(opts: {
+  assumeYes: boolean;
+  interactive: boolean;
+}): ConfirmDecision {
+  if (opts.assumeYes) return "apply";
+  return opts.interactive ? "prompt" : "abort";
+}

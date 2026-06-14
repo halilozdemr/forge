@@ -5,6 +5,7 @@ import {
   formatRouteTable,
   presetIsApplicable,
   providerAvailability,
+  resolveConfirmDecision,
   resolvePresetAssignments,
   resolveRouteAssignment,
   sortRouteRows,
@@ -176,5 +177,20 @@ describe("formatRouteTable", () => {
 
   it("returns a hint when there are no agents", () => {
     expect(formatRouteTable([], emptyProbe)).toEqual(["No agents found. Run `forge init` first."]);
+  });
+});
+
+describe("resolveConfirmDecision", () => {
+  it("applies without prompting when --yes is passed", () => {
+    expect(resolveConfirmDecision({ assumeYes: true, interactive: true })).toBe("apply");
+    expect(resolveConfirmDecision({ assumeYes: true, interactive: false })).toBe("apply");
+  });
+
+  it("prompts in an interactive session without --yes", () => {
+    expect(resolveConfirmDecision({ assumeYes: false, interactive: true })).toBe("prompt");
+  });
+
+  it("aborts non-interactively without --yes", () => {
+    expect(resolveConfirmDecision({ assumeYes: false, interactive: false })).toBe("abort");
   });
 });

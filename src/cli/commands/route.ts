@@ -5,7 +5,7 @@ import { loadConfig } from "../../utils/config.js";
 import { resolveCompany } from "../../utils/company.js";
 import { listRoutableProviders, defaultModelFor } from "../../bridge/runners/providers.js";
 import { PROVIDER_PRESETS, HEAVY_AGENTS } from "../../db/seed.js";
-import { intro, select, text } from "../prompts.js";
+import { intro, select, text, confirm } from "../prompts.js";
 import {
   type ProviderProbe,
   type RouteRow,
@@ -13,6 +13,7 @@ import {
   formatRouteTable,
   presetIsApplicable,
   providerAvailability,
+  resolveConfirmDecision,
   resolvePresetAssignments,
   resolveRouteAssignment,
   sortRouteRows,
@@ -140,6 +141,7 @@ export function routeCommand(): Command {
     .description("List heavy/light presets, or apply one across all stages")
     .option("--company <id>", "Company ID")
     .option("--dry-run", "Preview assignments without writing them")
+    .option("-y, --yes", "Skip the confirmation prompt")
     .action(async (name, opts) => {
       if (!name) {
         console.log(`\n${BOLD}Available presets${RESET}`);
@@ -170,6 +172,27 @@ export function routeCommand(): Command {
       if (opts.dryRun) {
         console.log(`\n${DIM}No changes written.${RESET}\n`);
         return;
+      }
+
+      // Applying a preset rewrites every stage — gate it behind confirmation.
+      const decision = resolveConfirmDecision({
+        assumeYes: Boolean(opts.yes),
+        interactive: Boolean(process.stdin.isTTY),
+      });
+      if (decision === "abort") {
+        throw new Error(
+          `Refusing to rewrite ${assignments.length} stages non-interactively. Re-run with --yes to confirm.`,
+        );
+      }
+      if (decision === "prompt") {
+        const ok = await confirm({
+          message: `Apply preset "${name}" to ${assignments.length} stages?`,
+          initialValue: false,
+        });
+        if (!ok) {
+          console.log(`\n${DIM}Aborted. No changes written.${RESET}\n`);
+          return;
+        }
       }
 
       for (const a of assignments) {
