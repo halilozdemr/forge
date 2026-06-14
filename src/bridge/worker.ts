@@ -1,5 +1,6 @@
 import { getDb } from "../db/client.js";
 import { createRunner } from "./runners/factory.js";
+import { estimateCost } from "./pricing.js";
 import { BudgetGate } from "./budget-gate.js";
 import { createChildLogger } from "../utils/logger.js";
 import type { AgentJobData } from "./queue.js";
@@ -479,15 +480,6 @@ export function isWorkerRunning(): boolean {
   return isRunning;
 }
 
-export function estimateCost(provider: string, model: string, inputTokens: number, outputTokens: number): number {
-  if (provider === "claude-cli") return 0;
-  if (provider === "anthropic-api") {
-    if (model.includes("opus")) return (inputTokens * 15 + outputTokens * 75) / 1_000_000;
-    if (model.includes("sonnet")) return (inputTokens * 3 + outputTokens * 15) / 1_000_000;
-    if (model.includes("haiku")) return (inputTokens * 0.25 + outputTokens * 1.25) / 1_000_000;
-  }
-  if (provider === "openrouter") {
-    return (inputTokens * 1 + outputTokens * 3) / 1_000_000;
-  }
-  return 0;
-}
+// Token-cost estimation lives in ./pricing.ts; re-exported here for callers
+// that historically imported it from the worker.
+export { estimateCost };

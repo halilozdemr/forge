@@ -34,9 +34,9 @@ forge route preset [name]  # list or apply a heavy/light preset (--dry-run to pr
 
 ## Cost tracking
 
-Cost tracking applies to `anthropic-api` and `openrouter` only. Token usage is logged to the `CostEvent` table and aggregated monthly per company.
+Cost tracking applies to the metered API providers — `anthropic-api`, `openai`, `openrouter`, and `gemini-api`. Token usage is logged to the `CostEvent` table and aggregated monthly per company. Rates live in `src/bridge/pricing.ts` (USD per 1M tokens, matched per model).
 
-`claude-cli` reports $0 — costs are handled by your Claude subscription outside Forge.
+CLI/local backends (`claude-cli`, `gemini-cli`, `codex-cli`, `opencode-cli`, `ollama`) report $0 — their cost is handled by your subscription/hardware outside Forge.
 
 ## Default model setup
 

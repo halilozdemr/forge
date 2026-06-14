@@ -297,6 +297,6 @@ export CLAUDE_CLI_PATH=~/.local/bin/claude
 - **Local-only** — Forge runs entirely on your machine. There is no cloud service or remote sync.
 - **Sequential pipeline stages** — parallel stage execution is not supported.
 - **No built-in git integration** — the devops agent can create branches/PRs when prompted, but Forge does not manage git automatically.
-- **Cost tracking is provider-scoped** — only `anthropic-api` and `openrouter` contribute to budget counters. `claude-cli` reports $0.
+- **Cost tracking is provider-scoped** — metered API providers (`anthropic-api`, `openai`, `openrouter`, `gemini-api`) contribute to budget counters. CLI/local backends (`claude-cli`, `gemini-cli`, `codex-cli`, `opencode-cli`, `ollama`) report $0.
 - **Single-node only** — queue and worker run in the same process as the server.
 - **Harness multi-sprint** — dynamic sprint injection beyond sprint 1 is functional but newer than the standard pipeline.
