@@ -2,6 +2,10 @@ import { Command } from "commander";
 import { loadConfig } from "../../utils/config.js";
 import { isSupportedModelProvider, isValidModel } from "../../agents/validation.js";
 import { resolveCompany } from "../../utils/company.js";
+import {
+  resolveProvidersAvailability,
+  type AvailabilityStatus,
+} from "../provider-status.js";
 
 
 const EDITABLE_STATUSES = new Set(["idle", "active", "paused", "terminated"]);
@@ -137,12 +141,72 @@ async function api<T>(path: string, method = "GET", body?: unknown): Promise<T> 
   return res.json() as Promise<T>;
 }
 
+const DIM = "\x1b[2m";
+const RESET = "\x1b[0m";
+
+function availabilityMark(status: AvailabilityStatus): string {
+  switch (status) {
+    case "ready":
+      return "\x1b[32m✓\x1b[0m";
+    case "missing":
+      return "\x1b[31m✗\x1b[0m";
+    default:
+      return `${DIM}◦${RESET}`;
+  }
+}
+
+function colorAgentStatus(status: string): string {
+  if (status === "idle") return `\x1b[32m${status}\x1b[0m`;
+  if (status === "active") return `\x1b[33m${status}\x1b[0m`;
+  if (status === "paused") return `\x1b[31m${status}\x1b[0m`;
+  return status;
+}
+
+/**
+ * Render the conductor routing table: every agent and the backend it is wired
+ * to, with a mark showing whether that backend is actually usable here.
+ */
+function printRoutingTable(agents: any[]): void {
+  const availability = resolveProvidersAvailability(
+    agents.map((a) => a.modelProvider).filter(Boolean),
+  );
+
+  const rule = "─".repeat(72);
+  console.log("\nConductor routing\n" + rule);
+  console.log(`    ${"AGENT".padEnd(18)}${"PROVIDER".padEnd(16)}${"MODEL".padEnd(20)}STATUS`);
+  console.log(rule);
+
+  for (const a of agents) {
+    const avail = availability.get(a.modelProvider);
+    const mark = avail ? availabilityMark(avail.status) : " ";
+    const provider = String(a.modelProvider ?? "—").padEnd(16);
+    const model = String(a.model ?? "—").padEnd(20);
+    console.log(`  ${mark} ${String(a.slug).padEnd(18)}${provider}${model}${colorAgentStatus(a.status)}`);
+  }
+
+  console.log(rule);
+  console.log(
+    `  ${DIM}legend:${RESET} \x1b[32m✓\x1b[0m ready   \x1b[31m✗\x1b[0m backend missing   ${DIM}◦ endpoint (not probed)${RESET}`,
+  );
+
+  // Surface unusable backends as actionable hints.
+  const missing = [...availability.values()].filter((v) => v.status === "missing");
+  if (missing.length) {
+    console.log();
+    for (const m of missing) {
+      const usedBy = agents.filter((a) => a.modelProvider === m.provider).map((a) => a.slug);
+      console.log(`  \x1b[31m✗\x1b[0m ${m.provider}: ${m.detail} — needed by: ${usedBy.join(", ")}`);
+    }
+  }
+  console.log();
+}
+
 export function agentCommand(): Command {
   const cmd = new Command("agent").description("Manage agents");
 
   cmd
     .command("list")
-    .description("List all agents")
+    .description("List all agents and the backend each is routed to")
     .option("--company <id>", "Company ID")
     .action(async (opts) => {
       const companyId = await resolveCompany(opts.company);
@@ -152,15 +216,7 @@ export function agentCommand(): Command {
         console.log("No agents found.");
         return;
       }
-      console.log("\nAgents\n" + "─".repeat(60));
-      for (const a of agents) {
-        const status = a.status === "idle" ? "\x1b[32midle\x1b[0m"
-          : a.status === "active" ? "\x1b[33mactive\x1b[0m"
-          : a.status === "paused" ? "\x1b[31mpaused\x1b[0m"
-          : a.status;
-        console.log(`  ${a.slug.padEnd(16)} ${a.name.padEnd(24)} ${status}`);
-      }
-      console.log();
+      printRoutingTable(agents);
     });
 
   cmd
