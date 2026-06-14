@@ -1,5 +1,7 @@
 import { Command } from "commander";
 import { loadConfig } from "../../utils/config.js";
+import { BOLD, RESET, colorStatus, formatDate, progressBar } from "../workflow-format.js";
+import { watchWorkflow } from "../watch-workflow.js";
 
 function baseUrl(): string {
   return `http://localhost:${loadConfig().port}`;
@@ -12,35 +14,6 @@ async function api<T>(path: string): Promise<T> {
     throw new Error(err.error ?? `HTTP ${res.status}`);
   }
   return res.json() as Promise<T>;
-}
-
-const STATUS_COLORS: Record<string, string> = {
-  pending: "\x1b[90m",
-  running: "\x1b[33m",
-  completed: "\x1b[32m",
-  failed: "\x1b[31m",
-  cancelled: "\x1b[35m",
-};
-const RESET = "\x1b[0m";
-const BOLD = "\x1b[1m";
-
-function colorStatus(status: string, pad = 0): string {
-  const c = STATUS_COLORS[status] ?? "";
-  const s = pad > 0 ? status.padEnd(pad) : status;
-  return `${c}${s}${RESET}`;
-}
-
-function formatDate(d: string | null | undefined): string {
-  if (!d) return "—";
-  return new Date(d).toLocaleString();
-}
-
-function progressBar(completed: number, total: number): string {
-  if (total === 0) return "no steps";
-  const pct = Math.round((completed / total) * 100);
-  const filled = Math.round((completed / total) * 10);
-  const bar = "█".repeat(filled) + "░".repeat(10 - filled);
-  return `${bar} ${completed}/${total} (${pct}%)`;
 }
 
 export function workflowCommand(): Command {
@@ -143,42 +116,7 @@ To start new work, use:
     .option("--interval <ms>", "Poll interval in milliseconds", "3000")
     .action(async (id, opts) => {
       const intervalMs = parseInt(opts.interval, 10) || 3000;
-      const TERMINAL = new Set(["completed", "failed", "cancelled"]);
-
-      console.log(`Watching workflow ${BOLD}${id}${RESET} — press Ctrl+C to stop\n`);
-
-      let lastStatus = "";
-      let lastStepKey: string | null = null;
-
-      // eslint-disable-next-line no-constant-condition
-      while (true) {
-        let w: any;
-        try {
-          ({ workflow: w } = await api<{ workflow: any }>(`/v1/workflows/${id}`));
-        } catch (err: any) {
-          console.error(`\x1b[31mError: ${err.message}${RESET}`);
-          process.exit(1);
-        }
-
-        const changed = w.status !== lastStatus || w.currentStepKey !== lastStepKey;
-        if (changed) {
-          const ts = new Date().toLocaleTimeString();
-          const progress = progressBar(w.progress.completed, w.progress.total);
-          console.log(
-            `[${ts}] ${colorStatus(w.status, 20)} step: ${(w.currentStepKey ?? "—").padEnd(20)} ${progress}`
-          );
-          lastStatus = w.status;
-          lastStepKey = w.currentStepKey ?? null;
-        }
-
-        if (TERMINAL.has(w.status)) {
-          console.log(`\nWorkflow ${w.status.toUpperCase()}.`);
-          if (w.lastError) console.log(`\x1b[31mError: ${w.lastError}${RESET}`);
-          break;
-        }
-
-        await new Promise((r) => setTimeout(r, intervalMs));
-      }
+      await watchWorkflow(id, { intervalMs });
     });
 
   return cmd;

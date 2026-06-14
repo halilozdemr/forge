@@ -6,6 +6,7 @@ import {
   resolveExecutionMode,
   type ExecutionMode,
 } from "../execution-mode.js";
+import { watchWorkflow } from "../watch-workflow.js";
 
 type WorkType = "feature" | "bug" | "refactor" | "release";
 
@@ -67,7 +68,9 @@ export function runCommand(): Command {
       new Option("--type <type>", "Work type").choices(["feature", "bug", "refactor", "release"]).default("feature"),
     )
     .addOption(createExecutionModeOption())
-    .action(async (description: string, opts: { type: string; mode?: string }) => {
+    .option("--watch", "Follow the pipeline live until it reaches a terminal state")
+    .option("--interval <ms>", "Watch poll interval in milliseconds", "3000")
+    .action(async (description: string, opts: { type: string; mode?: string; watch?: boolean; interval?: string }) => {
       try {
         const type = resolveWorkType(opts.type);
         const modeSelection = await resolveExecutionMode(opts.mode);
@@ -82,6 +85,12 @@ export function runCommand(): Command {
 
         console.log(`\x1b[32m${type[0].toUpperCase()}${type.slice(1)} request created.\x1b[0m`);
         printIntakeResult(result, type, modeSelection.mode, modeSelection.source);
+
+        if (opts.watch) {
+          const intervalMs = parseInt(opts.interval ?? "3000", 10) || 3000;
+          const completed = await watchWorkflow(result.pipelineRunId, { intervalMs });
+          if (!completed) process.exit(1);
+        }
       } catch (err: any) {
         console.error(`\x1b[31mError: ${err.message}\x1b[0m`);
         process.exit(1);
