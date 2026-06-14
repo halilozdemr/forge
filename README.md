@@ -1,8 +1,10 @@
 # Forge
 
-**Forge is a CLI-first AI workflow operating system for software teams.**
+**Forge is a CLI-first, provider-agnostic conductor for AI coding work — it orchestrates the coding CLIs you already use.**
 
 You describe work — a feature, a bug fix, a refactor. Forge routes it through a team of specialized AI agents, tracks every step, surfaces the output, and asks for your approval when it matters. You stay in control; the agents do the work.
+
+The point of difference: Forge doesn't replace Claude Code, Gemini CLI, Codex, opencode, or Ollama — it sits *above* them. Each pipeline stage can run on a different backend (architect on a strong model, builder on a cheap CLI, quality-guard on Claude), while Forge stays the vendor-neutral brain that handles deterministic gates, persistent tracking, retries, and budgets.
 
 ```bash
 forge init

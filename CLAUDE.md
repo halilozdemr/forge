@@ -2,21 +2,25 @@
 
 ## What Forge Is
 
-Forge is a local-first AI orchestration runtime for software work. You submit a feature, bug, refactor, or release request, and Forge runs it through a staged agent pipeline with tracking, retries, approvals, and artifacts.
+Forge is a local-first, provider-agnostic orchestration runtime for software work — a conductor that sits *above* the coding CLIs you already use. You submit a feature, bug, refactor, or release request, and Forge runs it through a staged agent pipeline with tracking, retries, approvals, and artifacts, routing each stage to whatever backend you configure for that agent.
+
+The differentiator is the multi-CLI execution core: each pipeline stage can run on a different backend — Claude Code, Gemini CLI, Codex CLI, opencode, Ollama, or a direct API. Forge stays the vendor-neutral brain (deterministic gates, persistent tracking, retries, budgets); the coding CLIs are interchangeable workers underneath it.
 
 ## Architecture Overview
 
 - Runtime bootstrap: `forge start` runs DB migrations/seeding, starts queue worker(s), heartbeat scheduler, HTTP server, and (by default) the interactive TUI console.
 - Orchestration core: `src/orchestrator/` builds pipeline plans and dispatches step runs with dependency-aware scheduling.
 - Agent execution: `src/bridge/worker.ts` pulls queued jobs, resolves workspace context, runs the configured provider runner, and reports step results back to the dispatcher.
+- Provider runners: `src/bridge/runners/` is the multi-CLI core. A factory (`factory.ts`) resolves a per-agent `modelProvider` to a runner behind the `AgentRunner` interface — `claude-cli`, `gemini-cli`, `codex-cli`, `opencode-cli`, `ollama`, `cursor`, plus direct API/HTTP runners (`anthropic-api`, `gemini-api`, `openrouter`, `http`).
 - API surface: Fastify routes in `src/server/routes/` expose intake, workflow status, approvals, queue, budget, and related system endpoints under `/v1`.
 - Storage: Prisma + SQLite persistence for projects, issues, pipeline runs/steps, artifacts, approvals, budgets, and logs.
 
 ## Primary Surfaces
 
-- TUI console (primary): `forge start`
-- MCP server (integration surface): `forge-mcp` / `npm run mcp`
-- Web dashboard (secondary, read-heavy monitoring): `http://localhost:3131`
+- CLI (primary): `forge run "..."` for submission, `forge start` to boot the runtime and open the TUI console.
+- MCP server (optional integration surface): `forge-mcp` / `npm run mcp` — exposes the runtime to MCP clients like Claude Code.
+
+The standalone OpenCode config generator and the web dashboard were removed in the conductor consolidation; the CLI is the single primary surface and the `/v1` HTTP API backs it.
 
 ## How to Run
 
@@ -85,13 +89,13 @@ npm run db:push
 - `bin/` — CLI entrypoints (`forge`, `forge-mcp`)
 - `src/cli/` — command implementations and TUI console shell
 - `src/orchestrator/` — intake service, dispatcher, pipeline builders, harness artifact handling
-- `src/bridge/` — worker loop, queue integration, provider runners, workspace/session helpers
+- `src/bridge/` — worker loop, queue integration, workspace/session helpers
+- `src/bridge/runners/` — multi-CLI provider runners + `factory.ts` (the conductor's execution core)
 - `src/server/` — Fastify server and `/v1` route handlers
 - `src/mcp/` — MCP server implementation for Claude Code integration
 - `src/agents/` — agent registry/loading/validation logic
 - `src/db/` + `prisma/` — DB client, migration/seeding glue, and Prisma schema/migrations
 - `ai-system/official/agents/` — official prompt files used by pipeline agents
-- `webui/` — dashboard frontend (secondary monitoring surface)
 - `scripts/` — utility scripts (for example seeding helpers)
 
 ## For Claude Code (MCP Integration)

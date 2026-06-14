@@ -6,17 +6,16 @@
 |---|---|---|
 | **CLI** | `src/cli/` | All `forge` commands. Each command is one file under `commands/`. |
 | **Console / TUI** | `src/cli/console/` | Interactive terminal UI. See [console.md](console.md). |
-| **Server** | `src/server/` | Fastify REST API on `localhost:3131`. All CLI and Web UI requests go through here. |
+| **Server** | `src/server/` | Fastify REST API on `localhost:3131`. All CLI and MCP requests go through here. |
 | **Worker** | `src/bridge/worker.ts` | Job processor. Picks up queued jobs, spawns the AI runner, streams output, writes logs and artifacts to SQLite. |
 | **Queue** | `src/bridge/queue.ts` | In-process SQLite-backed job queue. No Redis required. |
-| **Runner Factory** | `src/bridge/runners/` | Maps `modelProvider` string to a provider-specific runner class. |
+| **Runner Factory** | `src/bridge/runners/` | The multi-CLI conductor core. Maps a per-agent `modelProvider` to a runner: `claude-cli`, `gemini-cli`, `codex-cli`, `opencode-cli`, `ollama`, `cursor`, plus `anthropic-api`, `gemini-api`, `openrouter`, `http`. |
 | **Dispatcher** | `src/orchestrator/dispatcher.ts` | Pipeline state machine. Resolves `dependsOn`, advances steps, injects harness sprints dynamically. |
 | **Pipelines** | `src/orchestrator/pipelines/` | Pipeline definitions for feature, bug, refactor, release, and harness. |
 | **Agents** | `src/agents/` | Agent registry, loader, and defaults. Seeded on `forge start`, configurable live. |
 | **Heartbeat** | `src/heartbeat/` | Cron-based scheduler for agents with `heartbeatCron` configured. |
 | **Database** | `src/db/` | Prisma + SQLite at `~/.forge/forge.db`. All state lives here. |
 | **MCP Server** | `src/mcp/` | `forge-mcp` binary — exposes tools so Claude Code can orchestrate Forge. |
-| **Web UI** | `webui/` | Vite + vanilla TS SPA served at `http://localhost:3131`. |
 
 ---
 
@@ -49,7 +48,6 @@
 │   ├── mcp/                  # MCP server
 │   ├── heartbeat/            # Heartbeat scheduler
 │   └── utils/                # Config, logger, crypto, process helpers
-├── webui/                    # Vite + vanilla TS web interface
 ├── prisma/
 │   ├── schema.prisma
 │   └── migrations/
@@ -82,10 +80,9 @@
 
 ```bash
 npm run dev          # Start forge in dev mode (tsx, no build)
-npm run build        # Build webui + compile TypeScript to dist/
+npm run build        # Compile TypeScript to dist/
 npm run test         # Run unit tests with vitest
 npm run lint         # TypeScript type-check only (no emit)
-npm run webui:dev    # Vite dev server for the web UI (hot reload)
 ```
 
 ### Database
