@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   type ProviderProbe,
+  buildProviderChoices,
   formatRouteTable,
   presetIsApplicable,
   providerAvailability,
@@ -127,6 +128,21 @@ describe("presetIsApplicable", () => {
         light: { provider: "openrouter", model: "x" },
       }),
     ).toBe(false);
+  });
+});
+
+describe("buildProviderChoices", () => {
+  it("offers only routable providers with default-model hints", () => {
+    const choices = buildProviderChoices(emptyProbe);
+    const values = choices.map((c) => c.value);
+    expect(values).toContain("openai");
+    expect(values).not.toContain("process");
+    expect(values).not.toContain("http");
+
+    const openai = choices.find((c) => c.value === "openai");
+    expect(openai?.label).toContain("OpenAI");
+    expect(openai?.hint).toContain("gpt-4o");
+    expect(openai?.hint).toContain("missing"); // no key set in emptyProbe
   });
 });
 

@@ -3,11 +3,13 @@ import { existsSync } from "fs";
 import { join, delimiter } from "path";
 import { loadConfig } from "../../utils/config.js";
 import { resolveCompany } from "../../utils/company.js";
-import { listRoutableProviders } from "../../bridge/runners/providers.js";
+import { listRoutableProviders, defaultModelFor } from "../../bridge/runners/providers.js";
 import { PROVIDER_PRESETS, HEAVY_AGENTS } from "../../db/seed.js";
+import { intro, select, text } from "../prompts.js";
 import {
   type ProviderProbe,
   type RouteRow,
+  buildProviderChoices,
   formatRouteTable,
   presetIsApplicable,
   providerAvailability,
@@ -98,12 +100,29 @@ export function routeCommand(): Command {
   cmd
     .command("set <stage>")
     .description("Route a stage to a specific provider/model")
-    .requiredOption("--provider <id>", "Provider id (see `forge route providers`)")
+    .option("--provider <id>", "Provider id (see `forge route providers`)")
     .option("--model <model>", "Model (defaults to the provider's default)")
     .option("--company <id>", "Company ID")
     .action(async (stage, opts) => {
       const companyId = await resolveCompany(opts.company);
-      const assignment = resolveRouteAssignment(opts.provider, opts.model);
+
+      let provider: string = opts.provider;
+      let model: string | undefined = opts.model;
+
+      // No provider flag → interactive picker driven by the registry.
+      if (!provider) {
+        intro(`Route stage "${stage}"`);
+        provider = await select({
+          message: "Provider:",
+          options: buildProviderChoices(liveProbe),
+        });
+        model = await text({
+          message: `Model for ${provider}:`,
+          defaultValue: defaultModelFor(provider) ?? "default",
+        });
+      }
+
+      const assignment = resolveRouteAssignment(provider, model);
 
       await api(`/v1/agents/${stage}`, "PUT", {
         companyId,

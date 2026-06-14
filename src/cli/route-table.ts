@@ -9,6 +9,7 @@ import {
   getProvider,
   isRoutableProvider,
   defaultModelFor,
+  listRoutableProviders,
 } from "../bridge/runners/providers.js";
 
 export interface RouteRow {
@@ -88,6 +89,27 @@ export function resolveRouteAssignment(
     throw new Error(`No model supplied and no default model for provider "${id}"`);
   }
   return { provider: id, model: resolvedModel };
+}
+
+export interface ProviderChoice {
+  value: string;
+  label: string;
+  hint: string;
+}
+
+/**
+ * Build interactive picker options for the routable providers, annotated with
+ * each backend's default model and current availability.
+ */
+export function buildProviderChoices(probe: ProviderProbe): ProviderChoice[] {
+  return listRoutableProviders().map((descriptor) => {
+    const availability = providerAvailability(descriptor.id, probe);
+    return {
+      value: descriptor.id,
+      label: `${descriptor.id} (${descriptor.label})`,
+      hint: `${availability.status} · default ${descriptor.defaultModel}`,
+    };
+  });
 }
 
 export interface ProviderTier {
