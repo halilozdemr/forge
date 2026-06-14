@@ -11,6 +11,7 @@ import { intro, outro, text, confirm, select, p } from "../prompts.js";
 import { loadConfig } from "../../utils/config.js";
 import { createChildLogger } from "../../utils/logger.js";
 import { PROVIDER_PRESETS, ProviderStrategy } from "../../db/seed.js";
+import { defaultModelFor } from "../../bridge/runners/providers.js";
 import { syncProjectOpenCodeConfig } from "../../opencode/project-config.js";
 
 const log = createChildLogger("init");
@@ -829,11 +830,12 @@ function bestModel(
     if (tier === "light" && models.length > 1) return models[models.length - 1];
     return models[0];
   }
-  // Fallback to PROVIDER_PRESETS constant
+  // Fallback to the tier-aware PROVIDER_PRESETS constant, then to the
+  // single-source registry default, before the generic "default" sentinel.
   const presetKey = `${provider}-only` as string;
   const preset = PROVIDER_PRESETS[presetKey];
   if (preset) return preset[tier].model;
-  return "default";
+  return defaultModelFor(provider) ?? "default";
 }
 
 function buildAutoStrategy(
