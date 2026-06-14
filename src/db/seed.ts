@@ -11,7 +11,7 @@ import {
 
 const log = createChildLogger("seed");
 // Tier definitions: architect/quality checks are heavy, other official stages are light.
-const HEAVY_AGENTS = ["architect", "quality-guard"];
+export const HEAVY_AGENTS = ["architect", "quality-guard"];
 
 export interface ProviderStrategy {
   heavy: { provider: string; model: string };

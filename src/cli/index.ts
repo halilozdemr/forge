@@ -22,6 +22,7 @@ import { workflowCommand } from "./commands/workflow.js";
 import { featureCommand } from "./commands/feature.js";
 import { bugCommand } from "./commands/bug.js";
 import { runCommand } from "./commands/run.js";
+import { routeCommand } from "./commands/route.js";
 
 const program = new Command("forge");
 
@@ -46,6 +47,7 @@ program.addCommand(startCommand());
 program.addCommand(stopCommand());
 program.addCommand(statusCommand());
 program.addCommand(agentCommand());
+program.addCommand(routeCommand());
 program.addCommand(issueCommand());
 program.addCommand(sprintCommand());
 program.addCommand(budgetCommand());
