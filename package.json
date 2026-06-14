@@ -12,17 +12,13 @@
   "scripts": {
     "dev": "tsx bin/forge.ts start",
     "mcp": "tsx bin/forge-mcp.ts",
-    "build": "npm run webui:build && tsc -p tsconfig.build.json",
-    "postinstall": "cd webui && npm install",
+    "build": "tsc -p tsconfig.build.json",
     "start": "node dist/bin/forge.js start",
     "test": "vitest",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:push": "prisma db push",
-    "lint": "tsc --noEmit",
-    "webui:dev": "npm run dev --prefix webui",
-    "webui:build": "npm run build --prefix webui",
-    "webui:preview": "npm run preview --prefix webui"
+    "lint": "tsc --noEmit"
   },
   "keywords": [
     "ai",
@@ -36,7 +32,6 @@
   "dependencies": {
     "@clack/prompts": "^0.10.0",
     "@fastify/cors": "^8.5.0",
-    "@fastify/static": "^7.0.4",
     "@fastify/websocket": "^8.3.1",
     "@modelcontextprotocol/sdk": "^1.27.1",
     "@prisma/client": "^5.7.1",
