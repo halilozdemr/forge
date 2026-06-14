@@ -1,6 +1,12 @@
 import { Command } from "commander";
 import { loadConfig } from "../../utils/config.js";
 import { resolveCompany } from "../../utils/company.js";
+import {
+  type CostEventLike,
+  formatCostGroups,
+  groupByAgent,
+  groupByProvider,
+} from "../budget-report.js";
 
 function baseUrl(): string {
   return `http://localhost:${loadConfig().port}`;
@@ -86,22 +92,23 @@ export function budgetCommand(): Command {
       const params = new URLSearchParams({ companyId });
       if (opts.month) params.set("month", opts.month);
 
-      const { events, summary } = await api<{ events: any[]; summary: any }>(`/v1/budget/report?${params}`);
+      const { events, summary } = await api<{ events: CostEventLike[]; summary: any }>(`/v1/budget/report?${params}`);
 
       console.log(`\nCost Report — ${opts.month ?? new Date().toISOString().slice(0, 7)}\n` + "─".repeat(60));
       console.log(`Total: $${Number(summary?.totalUsd ?? 0).toFixed(4)} (${summary?.totalTokens ?? 0} tokens)`);
       console.log();
 
       if (events.length) {
-        const byAgent: Record<string, { usd: number; tokens: number }> = {};
-        for (const e of events) {
-          if (!byAgent[e.agentId]) byAgent[e.agentId] = { usd: 0, tokens: 0 };
-          byAgent[e.agentId].usd += Number(e.costUsd);
-          byAgent[e.agentId].tokens += e.inputTokens + e.outputTokens;
+        const byProvider = groupByProvider(events);
+        console.log("By provider:");
+        for (const line of formatCostGroups(byProvider, { minKeyWidth: 24 })) {
+          console.log(line);
         }
+        console.log();
+
         console.log("By agent:");
-        for (const [agentId, data] of Object.entries(byAgent).sort((a, b) => b[1].usd - a[1].usd)) {
-          console.log(`  ${agentId.padEnd(24)} $${data.usd.toFixed(4)}  ${data.tokens} tokens`);
+        for (const line of formatCostGroups(groupByAgent(events), { minKeyWidth: 24 })) {
+          console.log(line);
         }
       }
       console.log();
